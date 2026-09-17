@@ -1,0 +1,5 @@
+node_modules/
+*.map
+.DS_Store
+project.private.config.json
+tests/.build/
