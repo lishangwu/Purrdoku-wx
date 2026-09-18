@@ -1,26 +1,38 @@
 export const theme = {
-  paper: "#f3ead8",
-  paperDeep: "#e4d3b8",
-  cream: "#fff8ee",
-  ink: "#2c211c",
-  mute: "#8a7063",
-  seal: "#d4522a",
-  sealDark: "#b33d1c",
-  cocoa: "#6b4a34",
-  moss: "#4f6d57",
-  line: "#d7c4aa",
+  paper: "#f4f8fc",
+  paperDeep: "#eaf1f7",
+  surface: "#ffffff",
+  ink: "#293b52",
+  muted: "#647c9b",
+  line: "#e0e9f3",
+  accent: "#8073f5",
+  accentSoft: "#9486ff",
+  accentDeep: "#6966e9",
+  accentEdge: "#605ed8",
+  success: "#278b55",
+  star: "#cbaa00",
+  starFill: "#fbdb82",
   wrong: "#c43c28",
+  hintTint: "#edf0ff",
+  eyebrow: "#8976d8",
   regions: [
-    "#e8b4a2",
-    "#ead58a",
-    "#a8c5b8",
-    "#d9c4a8",
-    "#9bb7d0",
-    "#c9a27a",
-    "#d4b8c8",
-    "#b5c98a",
-    "#e2c08d",
+    "#8976d8",
+    "#fbdb82",
+    "#38a8bd",
+    "#ce6e91",
+    "#278b55",
+    "#a76c49",
+    "#ef98df",
+    "#88d275",
+    "#cbaa00",
   ],
+  // 兼容别名：现有 app/paint 可逐步迁移
+  cream: "#ffffff",
+  mute: "#647c9b",
+  seal: "#8073f5",
+  sealDark: "#6966e9",
+  cocoa: "#647c9b",
+  moss: "#278b55",
 };
 
 export const difficultyName = {
@@ -72,6 +84,23 @@ export function fillRound(
   ctx.fillStyle = color;
   roundBox(ctx, rect.x, rect.y, rect.w, rect.h, r);
   ctx.fill();
+}
+
+export function fillPrimary(
+  ctx: CanvasRenderingContext2DLike,
+  rect: Rect,
+  r: number,
+): void {
+  const g = ctx.createLinearGradient(rect.x, rect.y, rect.x + rect.w, rect.y + rect.h);
+  g.addColorStop(0, theme.accentSoft);
+  g.addColorStop(1, theme.accentDeep);
+  ctx.fillStyle = g;
+  roundBox(ctx, rect.x, rect.y, rect.w, rect.h, r);
+  ctx.fill();
+  ctx.strokeStyle = theme.accentEdge;
+  ctx.lineWidth = 3;
+  roundBox(ctx, rect.x, rect.y + 1, rect.w, rect.h, r);
+  ctx.stroke();
 }
 
 export function strokeRound(
