@@ -228,6 +228,7 @@ export function drawHeroPortrait(
   cy: number,
   radius: number,
 ): void {
+  ctx.save();
   const ring = Math.max(4, radius * 0.06);
   ctx.fillStyle = "#ffffff";
   ctx.beginPath();
@@ -312,6 +313,7 @@ export function drawHeroPortrait(
     ctx.restore();
     block.draw();
   }
+  ctx.restore();
 }
 
 export function card(ctx: CanvasRenderingContext2DLike, rect: Rect, radius = 22): void {
