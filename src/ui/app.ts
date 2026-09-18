@@ -33,7 +33,7 @@ import type { Env } from "../platform/env";
 import { fit } from "../platform/env";
 import {
   card,
-  drawCat,
+  drawHeroPortrait,
   drawMark,
   drawMiniCat,
   drawPaw,
@@ -42,6 +42,7 @@ import {
 } from "./paint";
 import {
   difficultyName,
+  fillPrimary,
   fillRound,
   hit,
   strokeRound,
@@ -334,64 +335,217 @@ export function createApp(env: Env) {
 
   function drawHome(ctx: CanvasRenderingContext2DLike): void {
     const box = frame();
-    ctx.fillStyle = theme.ink;
-    ctx.font = "700 14px sans-serif";
+    const cx = env.width / 2;
+    const h = box.h;
+
+    // 1. Left brand chip
+    ctx.fillStyle = theme.muted;
+    ctx.font = "11px sans-serif";
     ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    ctx.fillText("各就喵位", box.x + 6, box.y + 10);
-    ctx.fillStyle = theme.mute;
-    ctx.font = "13px sans-serif";
-    ctx.fillText("Purrdoku · 牛乳贴纸本", box.x + 6, box.y + 32);
+    ctx.textBaseline = "middle";
+    ctx.fillText("● 各就喵位 · 猫咪逻辑游戏", box.x + 4, box.y + 22);
+
+    // 2. Circular settings gear
     const gear = addHit("settings", {
-      x: box.x + box.w - 48,
+      x: box.x + box.w - 42,
       y: box.y + 4,
-      w: 44,
-      h: 44,
+      w: 40,
+      h: 40,
     });
-    fillRound(ctx, gear, theme.cream, 16);
-    ctx.fillStyle = theme.ink;
-    ctx.font = "18px sans-serif";
+    const gx = gear.x + gear.w / 2;
+    const gy = gear.y + gear.h / 2;
+    ctx.fillStyle = theme.surface;
+    ctx.beginPath();
+    ctx.arc(gx, gy, 18, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = theme.muted;
+    ctx.font = "16px sans-serif";
     ctx.textAlign = "center";
-    ctx.fillText("设", gear.x + 22, gear.y + 13);
+    ctx.textBaseline = "middle";
+    ctx.fillText("⚙", gx, gy + 1);
 
-    drawCat(ctx, env.width / 2, box.y + 168, 2.15);
+    // 3. Eyebrow with letter spacing
+    const eyebrowY = box.y + h * 0.085;
+    const eyebrow = "YOUR COZY PUZZLE CORNER";
+    ctx.fillStyle = theme.eyebrow;
+    ctx.font = "600 11px sans-serif";
+    ctx.textAlign = "left";
+    const gap = 3.2;
+    let eyebrowW = 0;
+    for (const ch of eyebrow) eyebrowW += ctx.measureText(ch).width + gap;
+    eyebrowW -= gap;
+    let ex = cx - eyebrowW / 2;
+    for (const ch of eyebrow) {
+      ctx.fillText(ch, ex, eyebrowY);
+      ex += ctx.measureText(ch).width + gap;
+    }
+
+    // 4. Title + star + subtitle
+    const titleY = box.y + h * 0.135;
+    ctx.font = "800 36px sans-serif";
+    const purr = "Purr";
+    const doku = "doku";
+    const purrW = ctx.measureText(purr).width;
+    const dokuW = ctx.measureText(doku).width;
+    const titleX = cx - (purrW + dokuW) / 2;
     ctx.fillStyle = theme.ink;
-    ctx.font = "800 34px sans-serif";
-    ctx.fillText("把猫请回颜色里", env.width / 2, box.y + 268);
-    ctx.fillStyle = theme.mute;
+    ctx.fillText(purr, titleX, titleY);
+    ctx.fillStyle = theme.accent;
+    ctx.fillText(doku, titleX + purrW, titleY);
+    // small four-point star by the final u
+    const starX = titleX + purrW + dokuW + 6;
+    const starY = titleY - 12;
+    ctx.fillStyle = theme.accent;
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = (i * Math.PI) / 2 - Math.PI / 2;
+      const ox = Math.cos(a) * 5;
+      const oy = Math.sin(a) * 5;
+      const ix = Math.cos(a + Math.PI / 4) * 1.8;
+      const iy = Math.sin(a + Math.PI / 4) * 1.8;
+      if (i === 0) ctx.moveTo(starX + ox, starY + oy);
+      else ctx.lineTo(starX + ox, starY + oy);
+      ctx.lineTo(starX + ix, starY + iy);
+    }
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = theme.muted;
     ctx.font = "14px sans-serif";
-    ctx.fillText("每行每列每色一只，彼此还不能挨着", env.width / 2, box.y + 312);
+    ctx.textAlign = "center";
+    ctx.fillText("不慌不忙，", cx, box.y + h * 0.195);
+    ctx.fillText("在色彩里让小猫各就各位", cx, box.y + h * 0.225);
 
-    const start = addHit("start", { x: box.x + 18, y: box.y + 356, w: box.w - 36, h: 58 });
-    fillRound(ctx, start, theme.seal, 29);
-    ctx.fillStyle = theme.cream;
-    ctx.font = "800 20px sans-serif";
-    ctx.fillText(infinite.play ? "继续贴纸" : "开始游戏", start.x + start.w / 2, start.y + 18);
+    // 5. Hero portrait (scale down on short screens)
+    const heroR = Math.min(box.w * 0.28, h * 0.155, 98);
+    const heroCy = box.y + h * 0.39;
+    drawHeroPortrait(ctx, cx, heroCy, heroR);
 
-    const daily = addHit("daily", {
-      x: box.x + 18,
-      y: start.y + 74,
-      w: (box.w - 44) / 2,
-      h: 72,
-    });
-    const help = addHit("help", { x: daily.x + daily.w + 8, y: daily.y, w: daily.w, h: 72 });
-    fillRound(ctx, daily, theme.cream, 18);
-    fillRound(ctx, help, theme.cream, 18);
-    ctx.fillStyle = theme.ink;
-    ctx.font = "700 16px sans-serif";
-    ctx.fillText("每日挑战", daily.x + daily.w / 2, daily.y + 18);
-    ctx.fillText("怎么玩", help.x + help.w / 2, help.y + 18);
-    ctx.fillStyle = theme.mute;
-    ctx.font = "12px sans-serif";
-    ctx.fillText(localDate(), daily.x + daily.w / 2, daily.y + 42);
-    ctx.fillText("四条规则", help.x + help.w / 2, help.y + 42);
-
-    ctx.fillStyle = theme.mute;
-    ctx.fillText(
-      `旅程 ${infinite.stats.completed}  ·  独立 ${infinite.stats.independent}  ·  无失误 ${infinite.stats.flawless}`,
-      env.width / 2,
-      box.y + box.h - 24,
+    // 6. Primary CTA
+    const startH = Math.max(52, Math.min(58, h * 0.095));
+    const startY = Math.min(
+      heroCy + heroR + h * 0.08,
+      box.y + h - startH - 120,
     );
+    const start = addHit("start", {
+      x: box.x + 16,
+      y: startY,
+      w: box.w - 32,
+      h: startH,
+    });
+    fillPrimary(ctx, start, startH * 0.48);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 18px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    const playLabel = infinite.play ? "继续游戏 · PLAY" : "开始游戏 · PLAY";
+    ctx.fillText(playLabel, start.x + start.w / 2, start.y + start.h / 2);
+    // play triangle
+    ctx.beginPath();
+    ctx.moveTo(start.x + 28, start.y + start.h / 2 - 7);
+    ctx.lineTo(start.x + 28, start.y + start.h / 2 + 7);
+    ctx.lineTo(start.x + 40, start.y + start.h / 2);
+    ctx.closePath();
+    ctx.fill();
+    // chevron
+    ctx.strokeStyle = "#ffffff";
+    ctx.lineWidth = 2.2;
+    ctx.lineCap = "round";
+    ctx.lineJoin = "round";
+    const ax = start.x + start.w - 30;
+    const ay = start.y + start.h / 2;
+    ctx.beginPath();
+    ctx.moveTo(ax - 4, ay - 6);
+    ctx.lineTo(ax + 2, ay);
+    ctx.lineTo(ax - 4, ay + 6);
+    ctx.stroke();
+
+    ctx.fillStyle = theme.muted;
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    ctx.fillText("自动保存进度，随时接着玩。", cx, start.y + start.h + 10);
+
+    // 7. Dual cards
+    const cardH = Math.max(68, Math.min(78, h * 0.12));
+    const cardY = Math.min(start.y + start.h + 36, box.y + h - cardH - 34);
+    const gapCards = 10;
+    const cardW = (box.w - 32 - gapCards) / 2;
+    const daily = addHit("daily", {
+      x: box.x + 16,
+      y: cardY,
+      w: cardW,
+      h: cardH,
+    });
+    const help = addHit("help", {
+      x: daily.x + daily.w + gapCards,
+      y: cardY,
+      w: cardW,
+      h: cardH,
+    });
+    card(ctx, daily, 18);
+    card(ctx, help, 18);
+
+    const iconPad = (rect: Rect): Rect => ({
+      x: rect.x + 14,
+      y: rect.y + (rect.h - 28) / 2,
+      w: 28,
+      h: 28,
+    });
+    const dailyIcon = iconPad(daily);
+    const helpIcon = iconPad(help);
+    ctx.globalAlpha = 0.2;
+    fillRound(ctx, dailyIcon, theme.accentSoft, 10);
+    fillRound(ctx, helpIcon, theme.accentSoft, 10);
+    ctx.globalAlpha = 1;
+    // calendar glyph
+    ctx.strokeStyle = theme.accent;
+    ctx.lineWidth = 1.6;
+    const cal = {
+      x: dailyIcon.x + 7,
+      y: dailyIcon.y + 8,
+      w: 14,
+      h: 12,
+    };
+    strokeRound(ctx, cal, theme.accent, 2.5, 1.6);
+    ctx.beginPath();
+    ctx.moveTo(cal.x, cal.y + 4);
+    ctx.lineTo(cal.x + cal.w, cal.y + 4);
+    ctx.stroke();
+    ctx.fillStyle = theme.accent;
+    ctx.fillRect(cal.x + 3, cal.y + 6, 3, 3);
+    ctx.fillRect(cal.x + 8, cal.y + 6, 3, 3);
+    // bulb glyph
+    const bx = helpIcon.x + 14;
+    const by = helpIcon.y + 12;
+    ctx.beginPath();
+    ctx.arc(bx, by, 5.5, Math.PI * 0.15, Math.PI * 0.85, true);
+    ctx.lineTo(bx + 3.2, by + 7);
+    ctx.lineTo(bx - 3.2, by + 7);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(bx - 2.5, by + 9);
+    ctx.lineTo(bx + 2.5, by + 9);
+    ctx.stroke();
+
+    ctx.fillStyle = theme.ink;
+    ctx.font = "700 15px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    ctx.fillText("每日挑战", daily.x + 50, daily.y + cardH * 0.38);
+    ctx.fillText("怎么玩", help.x + 50, help.y + cardH * 0.38);
+    ctx.fillStyle = theme.muted;
+    ctx.font = "12px sans-serif";
+    ctx.fillText("今天也来一局", daily.x + 50, daily.y + cardH * 0.66);
+    ctx.fillText("认识小猫的规则", help.x + 50, help.y + cardH * 0.66);
+
+    // 8. Footer
+    ctx.fillStyle = theme.muted;
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("♡  一点逻辑，一点治愈。", cx, box.y + h - 18);
   }
 
   function drawPlay(ctx: CanvasRenderingContext2DLike): void {
