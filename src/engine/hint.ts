@@ -3,15 +3,15 @@ import { boardKey } from "./board";
 import { logicalSolve } from "./logic";
 
 export const regionColorNames = [
-  "豆沙粉",
+  "薰衣草紫",
   "奶油黄",
-  "鼠尾草",
-  "沙色",
-  "雾蓝",
-  "可可",
-  "藕粉",
-  "苔绿",
-  "杏色",
+  "青蓝",
+  "玫粉",
+  "翠绿",
+  "可可棕",
+  "花粉",
+  "嫩绿",
+  "芥末金",
 ];
 
 export function explainedHint(

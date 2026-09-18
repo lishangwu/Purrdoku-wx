@@ -73,6 +73,14 @@ declare interface CanvasRenderingContext2DLike {
   strokeText(text: string, x: number, y: number, maxWidth?: number): void;
   measureText(text: string): TextMetricsLike;
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradientLike;
+  createRadialGradient(
+    x0: number,
+    y0: number,
+    r0: number,
+    x1: number,
+    y1: number,
+    r1: number,
+  ): CanvasGradientLike;
   setLineDash?(segments: number[]): void;
 }
 

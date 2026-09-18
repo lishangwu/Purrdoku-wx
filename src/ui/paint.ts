@@ -7,20 +7,16 @@ export function paintPaper(
 ): void {
   ctx.fillStyle = theme.paper;
   ctx.fillRect(0, 0, w, h);
-  const grad = ctx.createLinearGradient(0, 0, 0, h);
-  grad.addColorStop(0, "rgba(255,248,238,0.55)");
-  grad.addColorStop(0.45, "rgba(243,234,216,0)");
-  grad.addColorStop(1, "rgba(196,156,110,0.18)");
-  ctx.fillStyle = grad;
+  const a = ctx.createRadialGradient(w * 0.25, h * 0.3, 0, w * 0.25, h * 0.3, w * 0.55);
+  a.addColorStop(0, "rgba(216,236,239,0.55)");
+  a.addColorStop(1, "rgba(216,236,239,0)");
+  ctx.fillStyle = a;
   ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = "rgba(90,62,44,0.045)";
-  for (let i = 0; i < 90; i++) {
-    const x = ((i * 97) % 87) / 87 * w;
-    const y = ((i * 53) % 79) / 79 * h;
-    ctx.beginPath();
-    ctx.arc(x, y, i % 5 === 0 ? 1.4 : 0.7, 0, Math.PI * 2);
-    ctx.fill();
-  }
+  const b = ctx.createRadialGradient(w * 0.85, h * 0.75, 0, w * 0.85, h * 0.75, w * 0.5);
+  b.addColorStop(0, "rgba(225,233,239,0.5)");
+  b.addColorStop(1, "rgba(225,233,239,0)");
+  ctx.fillStyle = b;
+  ctx.fillRect(0, 0, w, h);
 }
 
 export function drawCat(
@@ -94,7 +90,7 @@ export function drawPaw(
   y: number,
   on: boolean,
 ): void {
-  ctx.fillStyle = on ? theme.seal : theme.line;
+  ctx.fillStyle = on ? theme.starFill : theme.line;
   ctx.beginPath();
   ctx.ellipse(x, y + 4, 6, 5, 0, 0, Math.PI * 2);
   ctx.fill();
@@ -116,7 +112,7 @@ export function drawMark(
   size: number,
   wrong: boolean,
 ): void {
-  ctx.strokeStyle = wrong ? theme.wrong : theme.cocoa;
+  ctx.strokeStyle = wrong ? theme.wrong : theme.muted;
   ctx.lineWidth = Math.max(2, size * 0.12);
   ctx.lineCap = "round";
   const r = size * 0.22;
@@ -185,14 +181,147 @@ export function wrapText(
   return lines;
 }
 
+function drawMiniStar(
+  ctx: CanvasRenderingContext2DLike,
+  cx: number,
+  cy: number,
+  r: number,
+  color: string,
+): void {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (let i = 0; i < 5; i++) {
+    const a = -Math.PI / 2 + (i * Math.PI * 2) / 5;
+    const ax = cx + Math.cos(a) * r;
+    const ay = cy + Math.sin(a) * r;
+    const b = a + Math.PI / 5;
+    const bx = cx + Math.cos(b) * r * 0.42;
+    const by = cy + Math.sin(b) * r * 0.42;
+    if (i === 0) ctx.moveTo(ax, ay);
+    else ctx.lineTo(ax, ay);
+    ctx.lineTo(bx, by);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+function drawMiniLeaf(
+  ctx: CanvasRenderingContext2DLike,
+  cx: number,
+  cy: number,
+  size: number,
+): void {
+  ctx.fillStyle = theme.starFill;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy - size * 0.55);
+  ctx.quadraticCurveTo(cx + size * 0.65, cy - size * 0.1, cx, cy + size * 0.55);
+  ctx.quadraticCurveTo(cx - size * 0.65, cy - size * 0.1, cx, cy - size * 0.55);
+  ctx.fill();
+  ctx.strokeStyle = theme.star;
+  ctx.lineWidth = Math.max(1, size * 0.08);
+  ctx.stroke();
+}
+
+export function drawHeroPortrait(
+  ctx: CanvasRenderingContext2DLike,
+  cx: number,
+  cy: number,
+  radius: number,
+): void {
+  const ring = Math.max(4, radius * 0.06);
+  ctx.fillStyle = "#ffffff";
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius + ring, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = "#d7e8f2";
+  ctx.beginPath();
+  ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = "rgba(255,255,255,0.95)";
+  ctx.lineWidth = ring;
+  ctx.stroke();
+
+  drawCat(ctx, cx, cy + radius * 0.06, (radius * 2.05) / 70);
+
+  const bubbleW = radius * 1.05;
+  const bubbleH = radius * 0.38;
+  const bubble: Rect = {
+    x: cx + radius * 0.22,
+    y: cy - radius * 1.05,
+    w: bubbleW,
+    h: bubbleH,
+  };
+  fillRound(ctx, bubble, theme.surface, bubbleH * 0.35);
+  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.lineWidth = 1;
+  roundBox(ctx, bubble.x, bubble.y, bubble.w, bubble.h, bubbleH * 0.35);
+  ctx.stroke();
+  ctx.fillStyle = theme.ink;
+  ctx.font = `600 ${Math.max(11, radius * 0.16)}px sans-serif`;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText("找到我了吗？", bubble.x + bubble.w / 2, bubble.y + bubble.h / 2);
+
+  const bs = radius * 0.28;
+  const br = bs * 0.32;
+  const blocks: { rect: Rect; color: string; draw: () => void }[] = [
+    {
+      rect: {
+        x: cx - radius * 1.02 - bs / 2,
+        y: cy - radius * 0.35 - bs / 2,
+        w: bs,
+        h: bs,
+      },
+      color: theme.regions[0]!,
+      draw: () => {
+        drawMark(ctx, cx - radius * 1.02, cy - radius * 0.35, bs, false);
+      },
+    },
+    {
+      rect: {
+        x: cx + radius * 0.78 - bs / 2,
+        y: cy + radius * 0.42 - bs / 2,
+        w: bs,
+        h: bs,
+      },
+      color: theme.regions[2]!,
+      draw: () => {
+        drawMiniStar(ctx, cx + radius * 0.78, cy + radius * 0.42, bs * 0.22, "#ffffff");
+      },
+    },
+    {
+      rect: {
+        x: cx - radius * 0.92 - bs / 2,
+        y: cy + radius * 0.62 - bs / 2,
+        w: bs,
+        h: bs,
+      },
+      color: theme.regions[1]!,
+      draw: () => {
+        drawMiniLeaf(ctx, cx - radius * 0.92, cy + radius * 0.62, bs * 0.55);
+      },
+    },
+  ];
+
+  for (const block of blocks) {
+    ctx.save();
+    ctx.shadowColor = "rgba(64,83,105,0.15)";
+    ctx.shadowBlur = 8;
+    ctx.shadowOffsetY = 3;
+    fillRound(ctx, block.rect, block.color, br);
+    ctx.restore();
+    block.draw();
+  }
+}
+
 export function card(ctx: CanvasRenderingContext2DLike, rect: Rect, radius = 22): void {
-  ctx.shadowColor = "rgba(80,52,32,0.14)";
+  ctx.shadowColor = "rgba(64,83,105,0.12)";
   ctx.shadowBlur = 18;
   ctx.shadowOffsetY = 6;
-  fillRound(ctx, rect, theme.cream, radius);
+  fillRound(ctx, rect, theme.surface, radius);
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(80,52,32,0.08)";
+  ctx.strokeStyle = "rgba(255,255,255,0.9)";
   ctx.lineWidth = 1;
   roundBox(ctx, rect.x, rect.y, rect.w, rect.h, radius);
   ctx.stroke();
