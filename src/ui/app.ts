@@ -822,7 +822,7 @@ export function createApp(env: Env) {
 
   function drawModal(ctx: CanvasRenderingContext2DLike): void {
     if (!modal) return;
-    ctx.fillStyle = "rgba(44,33,28,0.38)";
+    ctx.fillStyle = "rgba(41,59,82,0.35)";
     ctx.fillRect(0, 0, env.width, env.height);
     const box = modalFrame();
     card(ctx, box, 26);
@@ -831,87 +831,121 @@ export function createApp(env: Env) {
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     const titles: Record<Exclude<Modal, null>, string> = {
-      settings: "设置",
-      help: "怎么玩",
-      rules: "规则",
+      settings: "舒服地玩",
+      help: "给每只猫一个角落",
+      rules: "给每只猫一个角落",
       hint: hint?.title ?? "提示",
-      result: "贴纸贴好了",
-      restart: "重来",
+      result: "都找到啦",
+      restart: "重来一局",
       clear: "清除进度",
     };
     ctx.fillText(titles[modal], box.x + 24, box.y + 22);
-    const close = addHit("close", { x: box.x + box.w - 70, y: box.y + 14, w: 52, h: 40 });
-    fillRound(ctx, close, theme.paperDeep, 14);
+    const close = addHit("close", { x: box.x + box.w - 48, y: box.y + 16, w: 32, h: 32 });
+    ctx.fillStyle = theme.paperDeep;
+    ctx.beginPath();
+    ctx.arc(close.x + 16, close.y + 16, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = theme.muted;
     ctx.textAlign = "center";
-    ctx.font = "14px sans-serif";
-    ctx.fillText("关闭", close.x + 26, close.y + 12);
+    ctx.textBaseline = "middle";
+    ctx.font = "16px sans-serif";
+    ctx.fillText("✕", close.x + 16, close.y + 17);
+    ctx.textBaseline = "top";
 
     if (modal === "help" || modal === "rules") {
-      const lines = [
-        "1. 每行、每列、每个颜色区域恰好一只猫。",
-        "2. 任意两只猫不能上下、左右或斜对角相邻。远处对角可以。",
-        "3. 轻点空白格做 × 笔记；短时间内再点同一格放猫。",
-        "4. 按住滑动可连续标记。找齐所有猫即可通关，不必填满 ×。",
-        "5. 放错会记一次失误，但不会立刻结束。",
+      const rules = [
+        { no: "01", text: "每一行、每一列，各有一只猫。" },
+        { no: "02", text: "每一种颜色区域，恰好一只猫。" },
+        { no: "03", text: "小猫不能相邻，斜对角也不行。" },
       ];
-      let y = box.y + 78;
-      ctx.textAlign = "left";
-      ctx.font = "14px sans-serif";
-      ctx.fillStyle = theme.ink;
-      for (const line of lines) {
-        const wrapped = wrapText(ctx, line, box.w - 48, "14px sans-serif");
+      let y = box.y + 72;
+      for (const rule of rules) {
+        ctx.textAlign = "left";
+        ctx.fillStyle = theme.eyebrow;
+        ctx.font = "700 13px sans-serif";
+        ctx.fillText(rule.no, box.x + 24, y);
+        ctx.fillStyle = theme.ink;
+        ctx.font = "15px sans-serif";
+        const wrapped = wrapText(ctx, rule.text, box.w - 72, "15px sans-serif");
+        let ty = y;
         for (const row of wrapped) {
-          ctx.fillText(row, box.x + 24, y);
-          y += 22;
+          ctx.fillText(row, box.x + 56, ty);
+          ty += 22;
         }
-        y += 8;
+        y = Math.max(y + 28, ty + 10);
       }
+      const tip: Rect = { x: box.x + 24, y: y + 4, w: box.w - 48, h: 56 };
+      fillRound(ctx, tip, theme.paperDeep, 14);
+      ctx.fillStyle = theme.muted;
+      ctx.font = "13px sans-serif";
+      ctx.textAlign = "left";
+      ctx.fillText("轻点 = 标记 ×", tip.x + 16, tip.y + 12);
+      ctx.fillText("双击 = 尝试放猫", tip.x + 16, tip.y + 32);
+      const gotIt = addHit("gotIt", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
+      fillPrimary(ctx, gotIt, 18);
+      ctx.textAlign = "center";
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 16px sans-serif";
+      ctx.fillText("知道啦", gotIt.x + gotIt.w / 2, gotIt.y + 14);
     }
 
     if (modal === "settings") {
-      const rows: { key: keyof Settings; label: string }[] = [
-        { key: "autoMarkEnabled", label: "自动标记" },
-        { key: "soundEnabled", label: "游戏音效" },
-        { key: "musicEnabled", label: "背景音乐" },
-        { key: "hapticEnabled", label: "触觉反馈" },
-        { key: "animationsEnabled", label: "动态效果" },
+      ctx.textAlign = "left";
+      ctx.fillStyle = theme.muted;
+      ctx.font = "14px sans-serif";
+      ctx.fillText("调成你喜欢的样子。", box.x + 24, box.y + 56);
+      const rows: { key: keyof Settings; label: string; hint: string }[] = [
+        { key: "autoMarkEnabled", label: "自动标记", hint: "放对后自动标上 ×" },
+        { key: "hapticEnabled", label: "触觉反馈", hint: "轻触时微微震动" },
+        { key: "animationsEnabled", label: "动态效果", hint: "柔和的过渡动画" },
       ];
       rows.forEach((row, i) => {
-        const y = box.y + 84 + i * 52;
+        const y = box.y + 96 + i * 58;
         ctx.textAlign = "left";
         ctx.fillStyle = theme.ink;
         ctx.font = "16px sans-serif";
         ctx.fillText(row.label, box.x + 24, y);
-        const sw = addHit(`set:${row.key}`, { x: box.x + box.w - 78, y: y - 6, w: 50, h: 30 });
-        fillRound(ctx, sw, settings[row.key] ? theme.seal : theme.line, 15);
+        ctx.fillStyle = theme.muted;
+        ctx.font = "12px sans-serif";
+        ctx.fillText(row.hint, box.x + 24, y + 22);
+        const sw = addHit(`set:${row.key}`, { x: box.x + box.w - 78, y: y + 4, w: 50, h: 30 });
+        fillRound(ctx, sw, settings[row.key] ? theme.accent : theme.line, 15);
         ctx.fillStyle = theme.cream;
         ctx.beginPath();
         ctx.arc(settings[row.key] ? sw.x + 34 : sw.x + 16, sw.y + 15, 10, 0, Math.PI * 2);
         ctx.fill();
       });
-      const wipe = addHit("wipe", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 44 });
-      fillRound(ctx, wipe, theme.paperDeep, 16);
+      const wipe = addHit("wipe", { x: box.x + 24, y: box.y + box.h - 88, w: box.w - 48, h: 36 });
       ctx.textAlign = "center";
-      ctx.fillStyle = theme.seal;
-      ctx.font = "16px sans-serif";
-      ctx.fillText("清除全部进度", wipe.x + wipe.w / 2, wipe.y + 13);
+      ctx.fillStyle = theme.wrong;
+      ctx.font = "15px sans-serif";
+      ctx.fillText("清除所有游戏进度", wipe.x + wipe.w / 2, wipe.y + 8);
+      ctx.fillStyle = theme.muted;
+      ctx.font = "11px sans-serif";
+      ctx.fillText("Purrdoku · 各就喵位", env.width / 2, box.y + box.h - 28);
     }
 
     if (modal === "hint" && hint) {
       ctx.textAlign = "left";
       ctx.font = "14px sans-serif";
       ctx.fillStyle = theme.ink;
-      let y = box.y + 78;
+      let y = box.y + 72;
       for (const line of wrapText(ctx, hint.reason, box.w - 48, "14px sans-serif")) {
         ctx.fillText(line, box.x + 24, y);
         y += 22;
       }
-      const apply = addHit("applyHint", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
-      fillRound(ctx, apply, theme.seal, 18);
+      ctx.fillStyle = theme.muted;
+      ctx.font = "12px sans-serif";
+      ctx.fillText("白框：将标记 · ◆：推理依据", box.x + 24, y + 12);
+      const apply = addHit("applyHint", { x: box.x + 24, y: box.y + box.h - 96, w: box.w - 48, h: 46 });
+      fillPrimary(ctx, apply, 18);
       ctx.textAlign = "center";
-      ctx.fillStyle = theme.cream;
+      ctx.fillStyle = "#ffffff";
       ctx.font = "800 16px sans-serif";
-      ctx.fillText("应用到棋盘", apply.x + apply.w / 2, apply.y + 14);
+      ctx.fillText("应用", apply.x + apply.w / 2, apply.y + 14);
+      ctx.fillStyle = theme.muted;
+      ctx.font = "12px sans-serif";
+      ctx.fillText("先自己想想", apply.x + apply.w / 2, apply.y + 54);
     }
 
     if (modal === "result" && play) {
@@ -919,7 +953,7 @@ export function createApp(env: Env) {
       ctx.textAlign = "center";
       ctx.fillStyle = theme.ink;
       ctx.font = "16px sans-serif";
-      ctx.fillText(`${play.level.size} 只猫都就位了`, env.width / 2, box.y + 84);
+      ctx.fillText(`${play.level.size} 只猫都找到了角落`, env.width / 2, box.y + 84);
       for (let i = 0; i < 3; i++) drawPaw(ctx, env.width / 2 - 28 + i * 28, box.y + 130, i < result.stars);
       ctx.fillStyle = theme.mute;
       ctx.font = "14px sans-serif";
@@ -930,8 +964,8 @@ export function createApp(env: Env) {
       );
       if (mode === "infinite") {
         const go = addHit("next", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
-        fillRound(ctx, go, theme.seal, 18);
-        ctx.fillStyle = theme.cream;
+        fillPrimary(ctx, go, 18);
+        ctx.fillStyle = "#ffffff";
         ctx.font = "800 16px sans-serif";
         ctx.fillText("下一关", go.x + go.w / 2, go.y + 14);
       }
@@ -941,11 +975,11 @@ export function createApp(env: Env) {
       ctx.textAlign = "left";
       ctx.font = "15px sans-serif";
       ctx.fillStyle = theme.ink;
-      ctx.fillText("同一题从头再贴，当前失误会清零。", box.x + 24, box.y + 90);
+      ctx.fillText("同一题从头再来，当前失误会清零。", box.x + 24, box.y + 90);
       const ok = addHit("doRestart", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
-      fillRound(ctx, ok, theme.seal, 18);
+      fillPrimary(ctx, ok, 18);
       ctx.textAlign = "center";
-      ctx.fillStyle = theme.cream;
+      ctx.fillStyle = "#ffffff";
       ctx.font = "800 16px sans-serif";
       ctx.fillText("确定重来", ok.x + ok.w / 2, ok.y + 14);
     }
@@ -956,16 +990,16 @@ export function createApp(env: Env) {
       ctx.fillStyle = theme.ink;
       ctx.fillText("会清掉闯关、每日和统计，不能恢复。", box.x + 24, box.y + 90);
       const ok = addHit("doClear", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
-      fillRound(ctx, ok, theme.seal, 18);
+      fillPrimary(ctx, ok, 18);
       ctx.textAlign = "center";
-      ctx.fillStyle = theme.cream;
+      ctx.fillStyle = "#ffffff";
       ctx.font = "800 16px sans-serif";
       ctx.fillText("确定清除", ok.x + ok.w / 2, ok.y + 14);
     }
   }
 
   function tap(id: string): void {
-    if (id === "close") {
+    if (id === "close" || id === "gotIt") {
       modal = null;
       hint = null;
       return;
