@@ -34,6 +34,7 @@ export interface Level {
 export interface Snapshot {
   board: CellState[];
   mistakes: number;
+  catFaces?: number[];
 }
 
 export type HintKind = "place" | "exclude" | "correct" | "reveal";

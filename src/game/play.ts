@@ -14,6 +14,8 @@ import { defaultSettings } from "../types";
 export interface PlayState {
   level: Level;
   board: CellState[];
+  /** 与 board 等长：猫格的表情索引 0–11，非猫为 -1 */
+  catFaces: number[];
   mistakes: number;
   totalMistakes: number;
   hintsUsed: number;
@@ -27,10 +29,44 @@ export interface PlayState {
   settings: Settings;
 }
 
+export const CAT_FACE_COUNT = 12;
+
+export function randomCatFace(): number {
+  return Math.floor(Math.random() * CAT_FACE_COUNT);
+}
+
+function emptyFaces(size: number): number[] {
+  return Array.from({ length: size * size }, () => -1);
+}
+
+/** 旧存档补齐 catFaces；已有猫格随机分配表情 */
+export function ensureCatFaces(play: PlayState): void {
+  const n = play.board.length;
+  if (!play.catFaces || play.catFaces.length !== n) {
+    play.catFaces = play.board.map((cell) => (cell === "cat" ? randomCatFace() : -1));
+    return;
+  }
+  for (let i = 0; i < n; i++) {
+    if (play.board[i] === "cat" && (play.catFaces[i] ?? -1) < 0) {
+      play.catFaces[i] = randomCatFace();
+    }
+    if (play.board[i] !== "cat") play.catFaces[i] = -1;
+  }
+}
+
+function syncFaces(play: PlayState, prev: CellState[], next: CellState[]): void {
+  ensureCatFaces(play);
+  for (let i = 0; i < next.length; i++) {
+    if (next[i] === "cat" && prev[i] !== "cat") play.catFaces[i] = randomCatFace();
+    else if (next[i] !== "cat") play.catFaces[i] = -1;
+  }
+}
+
 export function createPlay(level: Level, settings: Settings = defaultSettings()): PlayState {
   return {
     level,
     board: emptyBoard(level.size),
+    catFaces: emptyFaces(level.size),
     mistakes: 0,
     totalMistakes: 0,
     hintsUsed: 0,
@@ -46,7 +82,12 @@ export function createPlay(level: Level, settings: Settings = defaultSettings())
 }
 
 function pushHistory(play: PlayState): void {
-  play.history.push({ board: play.board.slice(), mistakes: play.mistakes });
+  ensureCatFaces(play);
+  play.history.push({
+    board: play.board.slice(),
+    mistakes: play.mistakes,
+    catFaces: play.catFaces.slice(),
+  });
   if (play.history.length > 100) play.history.shift();
 }
 
@@ -68,7 +109,9 @@ export function placeOn(play: PlayState, index: number): boolean {
   const result = placeCat(play.level, play.board, index, play.settings.autoMarkEnabled);
   if (!result) return false;
   pushHistory(play);
+  const prev = play.board;
   play.board = result.board;
+  syncFaces(play, prev, result.board);
   if (!result.correct) {
     play.mistakes += 1;
     play.totalMistakes += 1;
@@ -91,6 +134,11 @@ export function undo(play: PlayState): boolean {
   const snap = play.history.pop()!;
   play.board = snap.board;
   play.mistakes = snap.mistakes;
+  if (snap.catFaces && snap.catFaces.length === play.board.length) {
+    play.catFaces = snap.catFaces.slice();
+  } else {
+    ensureCatFaces(play);
+  }
   return true;
 }
 
@@ -98,6 +146,7 @@ export function restart(play: PlayState, mode: "infinite" | "daily"): void {
   if (mode === "infinite") {
     play.restarts += 1;
     play.board = emptyBoard(play.level.size);
+    play.catFaces = emptyFaces(play.level.size);
     play.mistakes = 0;
     play.elapsed = 0;
     play.history = [];
@@ -143,10 +192,12 @@ export function applyHint(play: PlayState, plan: HintPlan): boolean {
     play.board = next;
     return true;
   }
+  const prev = play.board.slice();
   for (const i of plan.targets) {
     const result = placeCat(play.level, play.board, i, play.settings.autoMarkEnabled);
     if (result) play.board = result.board;
   }
+  syncFaces(play, prev, play.board);
   if (won(play.level, play.board)) play.completed = true;
   return true;
 }

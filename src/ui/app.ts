@@ -7,6 +7,7 @@ import {
   applyHint,
   createPlay,
   dragMark,
+  ensureCatFaces,
   noteHintShown,
   peekHint,
   placeOn,
@@ -34,6 +35,8 @@ import { fit } from "../platform/env";
 import {
   card,
   drawHeroPortrait,
+  loadCatBlink,
+  loadHeroCat,
   drawMark,
   drawMiniCat,
   drawPaw,
@@ -117,6 +120,9 @@ function newSeed(): string {
 }
 
 export function createApp(env: Env) {
+  loadHeroCat(env.canvas);
+  loadCatBlink(env.canvas);
+
   let shell = loadShell();
   let settings: Settings = shell.settings;
   let infinite = loadInfinite();
@@ -125,6 +131,7 @@ export function createApp(env: Env) {
   let modal: Modal = null;
   let mode: Mode = "infinite";
   let play: PlayState | null = infinite.play;
+  if (play) ensureCatFaces(play);
   let hint: HintPlan | null = null;
   let lastTs = 0;
   let visible = true;
@@ -195,6 +202,7 @@ export function createApp(env: Env) {
     if (infinite.play) {
       play = infinite.play;
       play.settings = settings;
+      ensureCatFaces(play);
       if (play.completed) modal = "result";
       persist();
       return;
@@ -239,6 +247,7 @@ export function createApp(env: Env) {
     if (rec?.play) {
       play = rec.play;
       play.settings = settings;
+      ensureCatFaces(play);
       modal = play.completed ? "result" : null;
       persist();
       return;
@@ -421,10 +430,10 @@ export function createApp(env: Env) {
     const heroCy = box.y + h * 0.39;
     drawHeroPortrait(ctx, cx, heroCy, heroR);
 
-    // 6. Primary CTA
+    // 6. Primary CTA（气泡在光圈下方，留出空隙）
     const startH = Math.max(52, Math.min(58, h * 0.095));
     const startY = Math.min(
-      heroCy + heroR + h * 0.08,
+      heroCy + heroR * 1.28 + h * 0.02,
       box.y + h - startH - 120,
     );
     const start = addHit("start", {
@@ -732,14 +741,14 @@ export function createApp(env: Env) {
           theme.regions[play.level.regions[r]![c]! % theme.regions.length]!,
           rr,
         );
-        if (i === focus) {
-          strokeRound(ctx, { x, y, w: s, h: s }, theme.ink, rr, 2);
-        }
         if (showHint && hint!.targets.includes(i)) {
           strokeRound(ctx, { x, y, w: s, h: s }, "#ffffff", rr, 3.2);
         }
         const cell = shown[i];
-        if (cell === "cat") drawMiniCat(ctx, x + s / 2, y + s / 2, s);
+        if (cell === "cat") {
+          ensureCatFaces(play);
+          drawMiniCat(ctx, x + s / 2, y + s / 2, s, play.catFaces[i] ?? 0);
+        }
         if (cell === "markedX") drawMark(ctx, x + s / 2, y + s / 2, s, false);
         if (cell === "wrongX") drawMark(ctx, x + s / 2, y + s / 2, s, true);
         if (showHint && hint!.sources.includes(i)) {
@@ -820,8 +829,203 @@ export function createApp(env: Env) {
     return { x: (env.width - w) / 2, y: (env.height - h) / 2, w, h };
   }
 
+  function drawHintSheet(ctx: CanvasRenderingContext2DLike): void {
+    if (!play || !hint) return;
+    const n = play.level.size;
+    const padX = 20;
+    const cardW = Math.min(360, env.width - padX * 2);
+    const cardX = (env.width - cardW) / 2;
+    const inner = 20;
+    const textW = cardW - inner * 2;
+
+    const applyH = 50;
+    const thinkH = 36;
+    const gapCardToBtn = 24;
+    const gapBtnToThink = 12;
+
+    ctx.fillStyle = "rgba(41,59,82,0.48)";
+    ctx.fillRect(0, 0, env.width, env.height);
+
+    const titleLines = wrapText(ctx, hint.title, textW - 36, "800 18px sans-serif");
+    const reasonLines = wrapText(ctx, hint.reason, textW, "14px sans-serif");
+    const titleBlock = titleLines.length * 24;
+    const reasonBlock = reasonLines.length * 21;
+    const rowUnit = hint.units?.find((u) => u < n);
+    const needLabel = rowUnit !== undefined;
+    const labelW = needLabel ? 40 : 0;
+
+    // 整盘 n×n，按可用高度上下居中整块（卡片+按钮）
+    const safeTop = env.insetTop + 12;
+    const safeBottom = env.height - env.insetBottom - 12;
+    const availableH = safeBottom - safeTop;
+    const fixedWithoutMini =
+      22 +
+      titleBlock +
+      10 +
+      reasonBlock +
+      14 +
+      12 +
+      36 +
+      20 +
+      gapCardToBtn +
+      applyH +
+      gapBtnToThink +
+      thinkH;
+    const maxMiniSide = Math.max(72, availableH - fixedWithoutMini);
+    const cellByW = Math.floor((textW - labelW - 12) / n);
+    const cellByH = Math.floor((maxMiniSide - 12) / n);
+    const cell = Math.max(10, Math.min(34, cellByW, cellByH));
+    const miniW = n * cell;
+    const miniH = n * cell;
+    const cardH = 22 + titleBlock + 10 + reasonBlock + 14 + miniH + 12 + 36 + 20;
+    const stackH = cardH + gapCardToBtn + applyH + gapBtnToThink + thinkH;
+    let cardY = Math.round((env.height - stackH) / 2);
+    if (cardY < safeTop) cardY = safeTop;
+    if (cardY + stackH > safeBottom) cardY = Math.max(safeTop, safeBottom - stackH);
+
+    card(ctx, { x: cardX, y: cardY, w: cardW, h: cardH }, 24);
+
+    let y = cardY + 20;
+    ctx.fillStyle = theme.ink;
+    ctx.font = "800 18px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    for (const line of titleLines) {
+      ctx.fillText(line, cardX + inner, y);
+      y += 24;
+    }
+    const close = addHit("close", {
+      x: cardX + cardW - 44,
+      y: cardY + 12,
+      w: 32,
+      h: 32,
+    });
+    ctx.fillStyle = theme.paperDeep;
+    ctx.beginPath();
+    ctx.arc(close.x + 16, close.y + 16, 14, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = theme.muted;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "16px sans-serif";
+    ctx.fillText("✕", close.x + 16, close.y + 17);
+
+    y += 8;
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillStyle = theme.ink;
+    ctx.font = "14px sans-serif";
+    for (const line of reasonLines) {
+      ctx.fillText(line, cardX + inner, y);
+      y += 21;
+    }
+
+    y += 12;
+    const miniX = cardX + (cardW - miniW + labelW) / 2;
+    const miniY = y;
+    fillRound(
+      ctx,
+      { x: miniX - 6, y: miniY - 6, w: miniW + 12, h: miniH + 12 },
+      theme.paperDeep,
+      14,
+    );
+
+    if (rowUnit !== undefined) {
+      const ly = miniY + rowUnit * cell + cell / 2;
+      ctx.fillStyle = theme.muted;
+      ctx.font = "11px sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      ctx.fillText(`第${rowUnit + 1}行`, miniX - 8, ly);
+    }
+
+    const gap = Math.max(1, cell * 0.08);
+    for (let r = 0; r < n; r++) {
+      for (let c = 0; c < n; c++) {
+        const i = r * n + c;
+        const x = miniX + c * cell + gap / 2;
+        const yy = miniY + r * cell + gap / 2;
+        const s = cell - gap;
+        const rr = Math.min(6, s * 0.28);
+        fillRound(
+          ctx,
+          { x, y: yy, w: s, h: s },
+          theme.regions[play.level.regions[r]![c]! % theme.regions.length]!,
+          rr,
+        );
+        if (hint.targets.includes(i)) {
+          strokeRound(ctx, { x, y: yy, w: s, h: s }, "#ffffff", rr, Math.max(1.5, cell * 0.08));
+        }
+        const cellState = play.board[i];
+        if (cellState === "cat") {
+          ensureCatFaces(play);
+          drawMiniCat(ctx, x + s / 2, yy + s / 2, s, play.catFaces[i] ?? 0);
+        }
+        if (cellState === "markedX") drawMark(ctx, x + s / 2, yy + s / 2, s, false);
+        if (cellState === "wrongX") drawMark(ctx, x + s / 2, yy + s / 2, s, true);
+        if (hint.sources.includes(i)) {
+          const dx = x + s * 0.72;
+          const dy = yy + s * 0.72;
+          const dr = Math.max(2, s * 0.12);
+          ctx.fillStyle = "#ffffff";
+          ctx.beginPath();
+          ctx.moveTo(dx, dy - dr);
+          ctx.lineTo(dx + dr, dy);
+          ctx.lineTo(dx, dy + dr);
+          ctx.lineTo(dx - dr, dy);
+          ctx.closePath();
+          ctx.fill();
+        }
+      }
+    }
+
+    y = miniY + miniH + 16;
+    const legend =
+      hint.kind === "place" || hint.kind === "reveal"
+        ? hint.sources.length
+          ? "白框：放猫位置  ·  ◆：推理依据"
+          : "白框：放猫位置"
+        : hint.sources.length
+          ? "白框：将标记 ×  ·  ◆：推理依据"
+          : "白框：将标记 ×";
+    ctx.fillStyle = theme.muted;
+    ctx.font = "12px sans-serif";
+    ctx.textAlign = "left";
+    ctx.textBaseline = "top";
+    ctx.fillText(legend, cardX + inner, y);
+
+    const applyW = Math.min(320, env.width - 48);
+    const apply: Rect = {
+      x: (env.width - applyW) / 2,
+      y: cardY + cardH + gapCardToBtn,
+      w: applyW,
+      h: applyH,
+    };
+    addHit("applyHint", apply);
+    fillPrimary(ctx, apply, applyH * 0.5);
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "800 17px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText("应用", apply.x + apply.w / 2, apply.y + apply.h / 2);
+
+    const think = addHit("gotIt", {
+      x: apply.x,
+      y: apply.y + apply.h + gapBtnToThink,
+      w: apply.w,
+      h: thinkH,
+    });
+    ctx.fillStyle = "rgba(255,255,255,0.88)";
+    ctx.font = "14px sans-serif";
+    ctx.fillText("先自己想想", think.x + think.w / 2, think.y + thinkH / 2);
+  }
+
   function drawModal(ctx: CanvasRenderingContext2DLike): void {
     if (!modal) return;
+    if (modal === "hint" && hint) {
+      drawHintSheet(ctx);
+      return;
+    }
     ctx.fillStyle = "rgba(41,59,82,0.35)";
     ctx.fillRect(0, 0, env.width, env.height);
     const box = modalFrame();
@@ -923,29 +1127,6 @@ export function createApp(env: Env) {
       ctx.fillStyle = theme.muted;
       ctx.font = "11px sans-serif";
       ctx.fillText("Purrdoku · 各就喵位", env.width / 2, box.y + box.h - 28);
-    }
-
-    if (modal === "hint" && hint) {
-      ctx.textAlign = "left";
-      ctx.font = "14px sans-serif";
-      ctx.fillStyle = theme.ink;
-      let y = box.y + 72;
-      for (const line of wrapText(ctx, hint.reason, box.w - 48, "14px sans-serif")) {
-        ctx.fillText(line, box.x + 24, y);
-        y += 22;
-      }
-      ctx.fillStyle = theme.muted;
-      ctx.font = "12px sans-serif";
-      ctx.fillText("白框：将标记 · ◆：推理依据", box.x + 24, y + 12);
-      const apply = addHit("applyHint", { x: box.x + 24, y: box.y + box.h - 96, w: box.w - 48, h: 46 });
-      fillPrimary(ctx, apply, 18);
-      ctx.textAlign = "center";
-      ctx.fillStyle = "#ffffff";
-      ctx.font = "800 16px sans-serif";
-      ctx.fillText("应用", apply.x + apply.w / 2, apply.y + 14);
-      ctx.fillStyle = theme.muted;
-      ctx.font = "12px sans-serif";
-      ctx.fillText("先自己想想", apply.x + apply.w / 2, apply.y + 54);
     }
 
     if (modal === "result" && play) {

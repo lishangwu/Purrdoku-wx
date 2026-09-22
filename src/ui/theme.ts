@@ -97,10 +97,6 @@ export function fillPrimary(
   ctx.fillStyle = g;
   roundBox(ctx, rect.x, rect.y, rect.w, rect.h, r);
   ctx.fill();
-  ctx.strokeStyle = theme.accentEdge;
-  ctx.lineWidth = 3;
-  roundBox(ctx, rect.x, rect.y + 1, rect.w, rect.h, r);
-  ctx.stroke();
 }
 
 export function strokeRound(

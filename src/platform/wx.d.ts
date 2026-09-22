@@ -82,16 +82,44 @@ declare interface CanvasRenderingContext2DLike {
     r1: number,
   ): CanvasGradientLike;
   setLineDash?(segments: number[]): void;
+  drawImage(
+    image: CanvasImageSourceLike,
+    dx: number,
+    dy: number,
+    dw?: number,
+    dh?: number,
+  ): void;
+  drawImage(
+    image: CanvasImageSourceLike,
+    sx: number,
+    sy: number,
+    sw: number,
+    sh: number,
+    dx: number,
+    dy: number,
+    dw: number,
+    dh: number,
+  ): void;
+}
+
+declare interface CanvasImageSourceLike {
+  width: number;
+  height: number;
+  src: string;
+  onload: ((ev?: unknown) => void) | null;
+  onerror: ((ev?: unknown) => void) | null;
 }
 
 declare interface HTMLCanvasElementLike {
   width: number;
   height: number;
   getContext(type: "2d"): CanvasRenderingContext2DLike;
+  createImage?(): CanvasImageSourceLike;
 }
 
 declare const wx: {
   createCanvas(): HTMLCanvasElementLike;
+  createImage?(): CanvasImageSourceLike;
   getSystemInfoSync(): WxSystemInfo;
   getWindowInfo?(): WxSystemInfo;
   onWindowResize?(cb: (res: { windowWidth: number; windowHeight: number }) => void): void;

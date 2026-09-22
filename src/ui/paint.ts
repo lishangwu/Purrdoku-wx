@@ -1,4 +1,6 @@
 import { fillRound, roundBox, theme, type Rect } from "./theme";
+import { HERO_CAT_SRC } from "./hero-cat";
+import { CAT_BLINK_SRC } from "./cat-blink";
 
 export function paintPaper(
   ctx: CanvasRenderingContext2DLike,
@@ -112,7 +114,7 @@ export function drawMark(
   size: number,
   wrong: boolean,
 ): void {
-  ctx.strokeStyle = wrong ? theme.wrong : theme.muted;
+  ctx.strokeStyle = wrong ? theme.wrong : "#ffffff";
   ctx.lineWidth = Math.max(2, size * 0.12);
   ctx.lineCap = "round";
   const r = size * 0.22;
@@ -129,7 +131,9 @@ export function drawMiniCat(
   cx: number,
   cy: number,
   size: number,
+  _face = 0,
 ): void {
+  if (drawBlinkCat(ctx, cx, cy, size)) return;
   const s = size / 70;
   ctx.save();
   ctx.translate(cx, cy + size * 0.08);
@@ -159,6 +163,44 @@ export function drawMiniCat(
   ctx.arc(5, -1, 1.6, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+}
+
+/** 2×2 精灵图，10 FPS 循环眨眼 */
+const BLINK_COLS = 2;
+const BLINK_ROWS = 2;
+const BLINK_FRAMES = BLINK_COLS * BLINK_ROWS;
+const BLINK_FPS = 6;
+
+function blinkFrameIndex(): number {
+  return Math.floor(Date.now() / (1000 / BLINK_FPS)) % BLINK_FRAMES;
+}
+
+function drawBlinkCat(
+  ctx: CanvasRenderingContext2DLike,
+  cx: number,
+  cy: number,
+  size: number,
+): boolean {
+  if (!blinkImg || blinkImg.width <= 0) return false;
+  const frame = blinkFrameIndex();
+  const fw = blinkImg.width / BLINK_COLS;
+  const fh = blinkImg.height / BLINK_ROWS;
+  const col = frame % BLINK_COLS;
+  const row = Math.floor(frame / BLINK_COLS);
+  // 格子 80% 居中，保持帧原始 1:1 比例，不裁切、不加底
+  const draw = size * 0.8;
+  ctx.drawImage(
+    blinkImg,
+    col * fw,
+    row * fh,
+    fw,
+    fh,
+    cx - draw / 2,
+    cy - draw / 2,
+    draw,
+    draw,
+  );
+  return true;
 }
 
 export function wrapText(
@@ -242,26 +284,43 @@ export function drawHeroPortrait(
   ctx.lineWidth = ring;
   ctx.stroke();
 
-  drawCat(ctx, cx, cy + radius * 0.06, (radius * 2.05) / 70);
+  if (heroCatImg) {
+    // 对齐 H5：猫略大于光圈，底对齐探出爪
+    const catSize = radius * 2 * (232 / 214);
+    const catTop = cy - radius - radius * 0.055;
+    ctx.drawImage(heroCatImg, cx - catSize / 2, catTop, catSize, catSize);
+  } else {
+    drawCat(ctx, cx, cy + radius * 0.06, (radius * 2.05) / 70);
+  }
 
+  // 气泡在光圈下方（与 H5 hello-tag 一致）
   const bubbleW = radius * 1.05;
-  const bubbleH = radius * 0.38;
+  const bubbleH = radius * 0.34;
   const bubble: Rect = {
-    x: cx + radius * 0.22,
-    y: cy - radius * 1.05,
+    x: cx - bubbleW / 2,
+    y: cy + radius * 0.78,
     w: bubbleW,
     h: bubbleH,
   };
-  fillRound(ctx, bubble, theme.surface, bubbleH * 0.35);
-  ctx.strokeStyle = "rgba(255,255,255,0.85)";
+  ctx.save();
+  ctx.translate(bubble.x + bubble.w / 2, bubble.y + bubble.h / 2);
+  ctx.rotate((-5 * Math.PI) / 180);
+  fillRound(
+    ctx,
+    { x: -bubble.w / 2, y: -bubble.h / 2, w: bubble.w, h: bubble.h },
+    theme.surface,
+    bubbleH * 0.45,
+  );
+  ctx.strokeStyle = theme.line;
   ctx.lineWidth = 1;
-  roundBox(ctx, bubble.x, bubble.y, bubble.w, bubble.h, bubbleH * 0.35);
+  roundBox(ctx, -bubble.w / 2, -bubble.h / 2, bubble.w, bubble.h, bubbleH * 0.45);
   ctx.stroke();
-  ctx.fillStyle = theme.ink;
-  ctx.font = `600 ${Math.max(11, radius * 0.16)}px sans-serif`;
+  ctx.fillStyle = theme.muted;
+  ctx.font = `600 ${Math.max(10, radius * 0.14)}px sans-serif`;
   ctx.textAlign = "center";
   ctx.textBaseline = "middle";
-  ctx.fillText("找到我了吗？", bubble.x + bubble.w / 2, bubble.y + bubble.h / 2);
+  ctx.fillText("找到我了吗？", 0, 0);
+  ctx.restore();
 
   const bs = radius * 0.28;
   const br = bs * 0.32;
@@ -281,25 +340,25 @@ export function drawHeroPortrait(
     {
       rect: {
         x: cx + radius * 0.78 - bs / 2,
+        y: cy - radius * 0.55 - bs / 2,
+        w: bs,
+        h: bs,
+      },
+      color: "#4ba5ed",
+      draw: () => {
+        drawMiniStar(ctx, cx + radius * 0.78, cy - radius * 0.55, bs * 0.22, "#ffffff");
+      },
+    },
+    {
+      rect: {
+        x: cx + radius * 0.88 - bs / 2,
         y: cy + radius * 0.42 - bs / 2,
         w: bs,
         h: bs,
       },
       color: theme.regions[2]!,
       draw: () => {
-        drawMiniStar(ctx, cx + radius * 0.78, cy + radius * 0.42, bs * 0.22, "#ffffff");
-      },
-    },
-    {
-      rect: {
-        x: cx - radius * 0.92 - bs / 2,
-        y: cy + radius * 0.62 - bs / 2,
-        w: bs,
-        h: bs,
-      },
-      color: theme.regions[1]!,
-      draw: () => {
-        drawMiniLeaf(ctx, cx - radius * 0.92, cy + radius * 0.62, bs * 0.55);
+        drawMiniLeaf(ctx, cx + radius * 0.88, cy + radius * 0.42, bs * 0.55);
       },
     },
   ];
@@ -316,6 +375,55 @@ export function drawHeroPortrait(
   ctx.restore();
 }
 
+let heroCatImg: CanvasImageSourceLike | null = null;
+let heroCatTried = false;
+let blinkImg: CanvasImageSourceLike | null = null;
+let blinkTried = false;
+
+function makeImage(canvas: HTMLCanvasElementLike): CanvasImageSourceLike | null {
+  if (typeof wx.createImage === "function") return wx.createImage();
+  if (typeof canvas.createImage === "function") return canvas.createImage();
+  return null;
+}
+
+function loadDataUrl(
+  canvas: HTMLCanvasElementLike,
+  src: string,
+  fileFallback: string,
+  onReady: (img: CanvasImageSourceLike) => void,
+): void {
+  const img = makeImage(canvas);
+  if (!img) return;
+  const accept = () => onReady(img);
+  img.onload = accept;
+  img.onerror = () => {
+    const fallback = makeImage(canvas);
+    if (!fallback) return;
+    fallback.onload = () => onReady(fallback);
+    fallback.src = fileFallback;
+  };
+  img.src = src;
+  if (img.width > 0) accept();
+}
+
+/** 加载 H5 首页猫图（data URL，不依赖本地路径） */
+export function loadHeroCat(canvas: HTMLCanvasElementLike): void {
+  if (heroCatTried || heroCatImg) return;
+  heroCatTried = true;
+  loadDataUrl(canvas, HERO_CAT_SRC, "/images/cat-1024.png", (img) => {
+    heroCatImg = img;
+  });
+}
+
+/** 加载棋盘猫眨眼精灵图（4 帧） */
+export function loadCatBlink(canvas: HTMLCanvasElementLike): void {
+  if (blinkTried || blinkImg) return;
+  blinkTried = true;
+  loadDataUrl(canvas, CAT_BLINK_SRC, "/assets/cats/cat-blink.png", (img) => {
+    blinkImg = img;
+  });
+}
+
 export function card(ctx: CanvasRenderingContext2DLike, rect: Rect, radius = 22): void {
   ctx.shadowColor = "rgba(64,83,105,0.12)";
   ctx.shadowBlur = 18;
@@ -323,8 +431,5 @@ export function card(ctx: CanvasRenderingContext2DLike, rect: Rect, radius = 22)
   fillRound(ctx, rect, theme.surface, radius);
   ctx.shadowColor = "transparent";
   ctx.shadowBlur = 0;
-  ctx.strokeStyle = "rgba(255,255,255,0.9)";
-  ctx.lineWidth = 1;
-  roundBox(ctx, rect.x, rect.y, rect.w, rect.h, radius);
-  ctx.stroke();
+  ctx.shadowOffsetY = 0;
 }

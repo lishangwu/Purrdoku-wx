@@ -17,6 +17,12 @@ async function main() {
     target: ["es2019"],
     charset: "utf8",
     minify: true,
+    loader: {
+      ".png": "dataurl",
+      ".jpg": "dataurl",
+      ".jpeg": "dataurl",
+      ".json": "json",
+    },
     metafile: true,
     logLevel: "silent",
     legalComments: "none",
