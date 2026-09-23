@@ -117,6 +117,36 @@ declare interface HTMLCanvasElementLike {
   createImage?(): CanvasImageSourceLike;
 }
 
+declare interface WxAudioParamLike {
+  value: number;
+  setValueAtTime(value: number, time: number): void;
+  linearRampToValueAtTime(value: number, time: number): void;
+  exponentialRampToValueAtTime(value: number, time: number): void;
+}
+
+declare interface WxAudioNodeLike {
+  connect(target: WxAudioNodeLike): void;
+}
+
+declare interface WxOscillatorLike extends WxAudioNodeLike {
+  type: string;
+  frequency: WxAudioParamLike;
+  start(time: number): void;
+  stop(time: number): void;
+}
+
+declare interface WxGainLike extends WxAudioNodeLike {
+  gain: WxAudioParamLike;
+}
+
+declare interface WxAudioContextLike {
+  currentTime: number;
+  destination: WxAudioNodeLike;
+  createOscillator(): WxOscillatorLike;
+  createGain(): WxGainLike;
+  resume?(): void;
+}
+
 declare const wx: {
   createCanvas(): HTMLCanvasElementLike;
   createImage?(): CanvasImageSourceLike;
@@ -129,6 +159,7 @@ declare const wx: {
   onTouchCancel(cb: (e: WxTouchEvent) => void): void;
   onKeyDown?(cb: (e: { code: string; key?: string }) => void): void;
   vibrateShort?(opts: { type?: string }): void;
+  createWebAudioContext?(): WxAudioContextLike;
   getStorageSync(key: string): unknown;
   setStorageSync(key: string, value: unknown): void;
   onShow(cb: () => void): void;

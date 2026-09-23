@@ -12,6 +12,7 @@ import {
   noteHintShown,
   peekHint,
   placeOn,
+  previewHintBoard,
   restart,
   resultOf,
   tick as tickPlay,
@@ -22,6 +23,8 @@ import {
 import { dailyIndex, dailyKey, localDate } from "../game/daily";
 import { GestureMachine } from "../game/gestures";
 import { PuzzleQueue } from "../game/puzzle-queue";
+import { milestoneFor, sound } from "../game/feedback";
+import { regionColorNames } from "../engine/hint";
 import {
   INFINITE_KEY,
   SAVE_KEY,
@@ -221,8 +224,10 @@ export function createApp(env: Env) {
       if (action.type === "place") {
         changed = placeOn(play, action.index);
         if (changed) {
+          const wrong = play.mistakes > mistakesBefore;
+          sound.play(wrong ? "wrong" : "cat", settings);
           if (play.completed) onWin();
-          buzz();
+          buzz(wrong ? "medium" : "light");
         }
       }
       if (action.type === "drag") {
@@ -234,6 +239,10 @@ export function createApp(env: Env) {
         pressedCell = null;
       }
       if (changed) {
+        if (action.type === "toggle" || action.type === "drag") {
+          sound.play("mark", settings);
+          buzz();
+        }
         recordBoardMotion(before, action.type === "place" ? action.index : null, mistakesBefore);
       }
       if (changed) persist();
@@ -258,8 +267,8 @@ export function createApp(env: Env) {
     writeJson(store, INFINITE_KEY, infinite);
   }
 
-  function buzz(): void {
-    if (settings.hapticEnabled) wx.vibrateShort?.({ type: "light" });
+  function buzz(type: "light" | "medium" = "light"): void {
+    if (settings.hapticEnabled) wx.vibrateShort?.({ type });
   }
 
   function makePuzzle(req: GenerateRequest) {
@@ -434,6 +443,7 @@ export function createApp(env: Env) {
     }
     play.recorded = true;
     const result = resultOf(play);
+    sound.play("win", settings);
     if (mode === "infinite") {
       infinite.stats.completed += 1;
       if (result.independent) infinite.stats.independent += 1;
@@ -824,23 +834,63 @@ export function createApp(env: Env) {
     // 三规则短条
     let cursorY = afterProgress;
     if (rulesH > 0) {
-      const labels = ["一色一猫", "行列各一", "互不相邻"];
-      const gapR = 6;
-      const rw = (box.w - gapR * 2) / 3;
-      const ruleFont = narrow ? "9px sans-serif" : "10px sans-serif";
-      for (let i = 0; i < 3; i++) {
-        const rect: Rect = {
-          x: box.x + i * (rw + gapR),
-          y: cursorY,
-          w: rw,
-          h: rulesH,
-        };
-        fillRound(ctx, rect, theme.surface, 12);
-        ctx.fillStyle = theme.ink;
-        ctx.font = `600 ${ruleFont}`;
+      const milestone = mode === "infinite" ? milestoneFor(infinite.ordinal) : "none";
+      if (milestone !== "none") {
+        fillRound(ctx, { x: box.x, y: cursorY, w: box.w, h: rulesH }, "#f0ecfb", 12);
+        ctx.fillStyle = "#6f59b2";
+        ctx.font = `700 ${narrow ? 10 : 11}px sans-serif`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(labels[i]!, rect.x + rect.w / 2, rect.y + rect.h / 2);
+        ctx.fillText(
+          milestone === "large" ? "✦ 猫咪旅程 · 盛大纪念" : "✦ 猫咪旅程 · 小小纪念",
+          cx,
+          cursorY + rulesH / 2,
+        );
+      } else {
+        const labels = ["一色一猫", "行列各一", "互不相邻"];
+        const gapR = 6;
+        const rw = (box.w - gapR * 2) / 3;
+        const ruleFont = narrow ? "8px sans-serif" : "9px sans-serif";
+        for (let i = 0; i < 3; i++) {
+          const rect: Rect = {
+            x: box.x + i * (rw + gapR),
+            y: cursorY,
+            w: rw,
+            h: rulesH,
+          };
+          fillRound(ctx, rect, theme.surface, 12);
+          const iconX = rect.x + 14;
+          const iconY = rect.y + rect.h / 2;
+          ctx.strokeStyle = theme.accent;
+          ctx.lineWidth = 1.4;
+          ctx.strokeRect(iconX - 6, iconY - 6, 12, 12);
+          if (i === 0) {
+            ctx.fillStyle = theme.regions[2]!;
+            ctx.fillRect(iconX - 5, iconY - 5, 5, 10);
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.arc(iconX - 2.5, iconY, 1.8, 0, Math.PI * 2);
+            ctx.fill();
+          } else if (i === 1) {
+            ctx.fillStyle = theme.accent;
+            ctx.beginPath();
+            ctx.arc(iconX, iconY, 2, 0, Math.PI * 2);
+            ctx.fill();
+          } else {
+            ctx.strokeStyle = theme.wrong;
+            ctx.beginPath();
+            ctx.moveTo(iconX - 4, iconY - 4);
+            ctx.lineTo(iconX + 4, iconY + 4);
+            ctx.moveTo(iconX + 4, iconY - 4);
+            ctx.lineTo(iconX - 4, iconY + 4);
+            ctx.stroke();
+          }
+          ctx.fillStyle = theme.ink;
+          ctx.font = `600 ${ruleFont}`;
+          ctx.textAlign = "left";
+          ctx.textBaseline = "middle";
+          ctx.fillText(labels[i]!, rect.x + 25, rect.y + rect.h / 2);
+        }
       }
       cursorY += rulesH + 8;
     }
@@ -1027,6 +1077,15 @@ export function createApp(env: Env) {
     const titleBlock = titleLines.length * 24;
     const reasonBlock = reasonLines.length * 21;
     const rowUnit = hint.units?.find((u) => u < n);
+    const previewBoard =
+      previewHintBoard(play.level, play.board, hint, settings.autoMarkEnabled) ?? play.board;
+    const unitLabels = (hint.units ?? []).slice(0, 2).map((unit) =>
+      unit < n
+        ? `第${unit + 1}行`
+        : unit < n * 2
+          ? `第${unit - n + 1}列`
+          : `${regionColorNames[unit - n * 2] ?? "颜色"}区域`,
+    );
     const needLabel = rowUnit !== undefined;
     const labelW = needLabel ? 40 : 0;
 
@@ -1132,7 +1191,7 @@ export function createApp(env: Env) {
         if (hint.targets.includes(i)) {
           strokeRound(ctx, { x, y: yy, w: s, h: s }, "#ffffff", rr, Math.max(1.5, cell * 0.08));
         }
-        const cellState = play.board[i];
+        const cellState = previewBoard[i];
         if (cellState === "cat") {
           ensureCatFaces(play);
           drawMiniCat(ctx, x + s / 2, yy + s / 2, s, 0);
@@ -1156,18 +1215,19 @@ export function createApp(env: Env) {
     }
 
     y = miniY + miniH + 16;
-    const legend =
-      hint.kind === "place" || hint.kind === "reveal"
-        ? hint.sources.length
-          ? "白框：放猫位置  ·  ◆：推理依据"
-          : "白框：放猫位置"
-        : hint.sources.length
-          ? "白框：将标记 ×  ·  ◆：推理依据"
-          : "白框：将标记 ×";
+    const legend = hint.kind === "correct"
+      ? "白框：取消错误的 ×"
+      : hint.sources.length
+        ? "白框：应用后的变化  ·  ◆：推理依据"
+        : "白框：应用后的变化";
     ctx.fillStyle = theme.muted;
-    ctx.font = "12px sans-serif";
+    ctx.font = "11px sans-serif";
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
+    if (unitLabels.length) {
+      ctx.fillText(`推理范围：${unitLabels.join(" · ")}`, cardX + inner, y);
+      y += 17;
+    }
     ctx.fillText(legend, cardX + inner, y);
 
     const applyW = Math.min(320, env.width - 48);
@@ -1276,11 +1336,13 @@ export function createApp(env: Env) {
       ctx.fillText("调成你喜欢的样子。", box.x + 24, box.y + 56);
       const rows: { key: keyof Settings; label: string; hint: string }[] = [
         { key: "autoMarkEnabled", label: "自动标记", hint: "放对后自动标上 ×" },
+        { key: "soundEnabled", label: "游戏音效", hint: "轻轻一声，回应每一步" },
+        { key: "musicEnabled", label: "背景音乐", hint: "简单、舒缓的原创旋律" },
         { key: "hapticEnabled", label: "触觉反馈", hint: "轻触时微微震动" },
-        { key: "animationsEnabled", label: "动态效果", hint: "柔和的过渡动画" },
+        { key: "animationsEnabled", label: "动态效果", hint: "眨眼、弹出与柔和过渡" },
       ];
       rows.forEach((row, i) => {
-        const y = box.y + 96 + i * 58;
+        const y = box.y + 88 + i * 52;
         ctx.textAlign = "left";
         ctx.fillStyle = theme.ink;
         ctx.font = "16px sans-serif";
@@ -1307,18 +1369,34 @@ export function createApp(env: Env) {
 
     if (modal === "result" && play) {
       const result = resultOf(play);
+      const milestone = mode === "infinite" ? milestoneFor(infinite.ordinal) : "none";
       ctx.textAlign = "center";
       ctx.fillStyle = theme.ink;
       ctx.font = "16px sans-serif";
-      ctx.fillText(`${play.level.size} 只猫都找到了角落`, env.width / 2, box.y + 84);
-      for (let i = 0; i < 3; i++) drawPaw(ctx, env.width / 2 - 28 + i * 28, box.y + 130, i < result.stars);
+      ctx.fillText(
+        milestone === "none" ? `${play.level.size} 只猫都找到了角落` : `第${infinite.ordinal}关，猫咪齐聚！`,
+        env.width / 2,
+        box.y + 72,
+      );
+      drawMiniCat(ctx, env.width / 2, box.y + 122, 64, 0);
+      for (let i = 0; i < 3; i++) drawPaw(ctx, env.width / 2 - 28 + i * 28, box.y + 166, i < result.stars);
       ctx.fillStyle = theme.mute;
-      ctx.font = "14px sans-serif";
+      ctx.font = "13px sans-serif";
       ctx.fillText(
         `用时 ${Math.floor(play.elapsed)} 秒 · 失误 ${play.mistakes} · 提示 ${play.hintsUsed}`,
         env.width / 2,
-        box.y + 168,
+        box.y + 198,
       );
+      const badges = [result.independent ? "独立完成" : "提示相伴", result.flawless ? "完美落位" : "继续加油"];
+      ctx.fillStyle = theme.accentSoft;
+      ctx.font = "700 12px sans-serif";
+      ctx.fillText(badges.join("  ·  "), env.width / 2, box.y + 226);
+      if (milestone !== "none") {
+        fillRound(ctx, { x: box.x + 36, y: box.y + 246, w: box.w - 72, h: 38 }, "#f0ecfb", 12);
+        ctx.fillStyle = "#6f59b2";
+        ctx.font = "700 12px sans-serif";
+        ctx.fillText("✦ 这一站，值得纪念。", env.width / 2, box.y + 258);
+      }
       if (mode === "infinite") {
         const go = addHit("next", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
         fillPrimary(ctx, go, 18);
@@ -1334,6 +1412,12 @@ export function createApp(env: Env) {
           go.x + go.w / 2,
           go.y + 14,
         );
+      } else {
+        const home = addHit("resultHome", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
+        fillPrimary(ctx, home, 18);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "800 16px sans-serif";
+        ctx.fillText("返回首页", home.x + home.w / 2, home.y + 14);
       }
     }
 
@@ -1365,6 +1449,9 @@ export function createApp(env: Env) {
   }
 
   function tap(id: string): void {
+    sound.play("click", settings);
+    buzz();
+    sound.setMusic(settings.musicEnabled && visible);
     if (id === "close" || id === "gotIt") {
       modal = null;
       hint = null;
@@ -1401,6 +1488,10 @@ export function createApp(env: Env) {
       hint = null;
     }
     if (id === "next") void nextInfinite();
+    if (id === "resultHome") {
+      scene = "home";
+      modal = null;
+    }
     if (id === "doRestart" && play) {
       restart(play, mode);
       clearBoardMotion();
@@ -1431,6 +1522,7 @@ export function createApp(env: Env) {
       const key = id.slice(4) as keyof Settings;
       settings[key] = !settings[key];
       if (play) play.settings = settings;
+      if (key === "musicEnabled") sound.setMusic(settings.musicEnabled && visible);
     }
     persist();
   }
@@ -1571,6 +1663,7 @@ export function createApp(env: Env) {
   wx.onKeyDown?.((e) => key(e.code || e.key || ""));
   wx.onHide(() => {
     visible = false;
+    sound.setMusic(false);
     gestures.cancel();
     uiPress = null;
     activeTouchId = null;
@@ -1580,6 +1673,7 @@ export function createApp(env: Env) {
   });
   wx.onShow(() => {
     visible = true;
+    sound.setMusic(settings.musicEnabled);
     lastTs = 0;
     fit(env);
   });

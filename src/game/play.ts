@@ -180,27 +180,37 @@ export function noteHintShown(play: PlayState): void {
   play.hintsUsed += 1;
 }
 
-export function applyHint(play: PlayState, plan: HintPlan): boolean {
-  if (!editable(play)) return false;
-  if (plan.boardKey !== boardKey(play.board)) return false;
-  pushHistory(play);
+export function previewHintBoard(
+  level: Level,
+  board: CellState[],
+  plan: HintPlan,
+  autoMark: boolean,
+): CellState[] | null {
+  if (plan.boardKey !== boardKey(board)) return null;
+  const next = board.slice();
   if (plan.kind === "correct") {
-    const next = play.board.slice();
     for (const i of plan.targets) if (next[i] === "markedX") next[i] = "empty";
-    play.board = next;
-    return true;
+    return next;
   }
   if (plan.kind === "exclude") {
-    const next = play.board.slice();
     for (const i of plan.targets) if (next[i] === "empty") next[i] = "markedX";
-    play.board = next;
-    return true;
+    return next;
   }
-  const prev = play.board.slice();
+  let result = next;
   for (const i of plan.targets) {
-    const result = placeCat(play.level, play.board, i, play.settings.autoMarkEnabled);
-    if (result) play.board = result.board;
+    const placed = placeCat(level, result, i, autoMark);
+    if (placed) result = placed.board;
   }
+  return result;
+}
+
+export function applyHint(play: PlayState, plan: HintPlan): boolean {
+  if (!editable(play)) return false;
+  const next = previewHintBoard(play.level, play.board, plan, play.settings.autoMarkEnabled);
+  if (!next) return false;
+  pushHistory(play);
+  const prev = play.board.slice();
+  play.board = next;
   syncFaces(play, prev, play.board);
   if (won(play.level, play.board)) play.completed = true;
   return true;
