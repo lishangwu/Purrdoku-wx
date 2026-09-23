@@ -29,6 +29,11 @@ export interface Level {
   source?: LevelSource;
   rating?: Rating;
   signature?: string;
+  generation?: {
+    generatorVersion: number;
+    pacerVersion: number;
+    purpose: Purpose;
+  };
 }
 
 export interface Snapshot {

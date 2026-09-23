@@ -1,7 +1,8 @@
 import { generatePuzzle, type GenerateRequest } from "../engine/generate";
-import { planLevel, type PaceHistory } from "../engine/pacer";
+import { planLevel, type LevelPlan, type PaceHistory } from "../engine/pacer";
 import { hashSeed, rngFrom } from "../engine/rng";
 import { markPath, starsFor } from "../engine/board";
+import { CURRENT_VERSIONS, tagGeneratedLevel } from "../engine/versions";
 import { staticLevels } from "../data/static";
 import {
   applyHint,
@@ -20,6 +21,7 @@ import {
 } from "../game/play";
 import { dailyIndex, dailyKey, localDate } from "../game/daily";
 import { GestureMachine } from "../game/gestures";
+import { PuzzleQueue } from "../game/puzzle-queue";
 import {
   INFINITE_KEY,
   SAVE_KEY,
@@ -73,6 +75,12 @@ type Modal =
   | "clear";
 type Mode = "infinite" | "daily";
 
+interface PreparedPuzzle {
+  ordinal: number;
+  plan: LevelPlan;
+  level: ReturnType<typeof tagGeneratedLevel>;
+}
+
 const store = wxStore();
 
 function isPlay(value: unknown): value is PlayState {
@@ -96,6 +104,7 @@ function loadShell(): ShellSave {
 
 function loadInfinite(): InfiniteSave {
   const raw = readJson<Partial<InfiniteSave>>(store, INFINITE_KEY, {
+    versions: CURRENT_VERSIONS,
     playerSeed: newSeed(),
     ordinal: 0,
     play: null,
@@ -104,6 +113,10 @@ function loadInfinite(): InfiniteSave {
     sizeCounts: { 6: 0, 7: 0, 8: 0, 9: 0 },
   });
   return {
+    versions: {
+      generator: raw.versions?.generator ?? CURRENT_VERSIONS.generator,
+      pacer: raw.versions?.pacer ?? CURRENT_VERSIONS.pacer,
+    },
     playerSeed: typeof raw.playerSeed === "string" ? raw.playerSeed : newSeed(),
     ordinal: typeof raw.ordinal === "number" ? raw.ordinal : 0,
     play: isPlay(raw.play) ? raw.play : null,
@@ -145,6 +158,11 @@ export function createApp(env: Env) {
   let previewPath: number[] | null = null;
   let pressedCell: number | null = null;
   let toast = "";
+  let preparedPuzzle: PreparedPuzzle | null = null;
+  let preparingPuzzle = false;
+  let generationError = "";
+
+  const puzzleQueue = new PuzzleQueue<PreparedPuzzle>();
 
   const gestures = new GestureMachine(
     {
@@ -202,6 +220,67 @@ export function createApp(env: Env) {
     return generatePuzzle(req);
   }
 
+  function planFor(ordinal: number): LevelPlan {
+    return planLevel(
+      ordinal,
+      infinite.history,
+      infinite.sizeCounts,
+      rngFrom(`${infinite.playerSeed}|${ordinal}`),
+    );
+  }
+
+  function generationKey(ordinal: number, plan: LevelPlan, maxCandidates: number): string {
+    return JSON.stringify([
+      infinite.playerSeed,
+      ordinal,
+      plan,
+      infinite.history.map((entry) => entry.signature),
+      CURRENT_VERSIONS,
+      maxCandidates,
+    ]);
+  }
+
+  async function prepareNextPuzzle(maxCandidates = 80): Promise<PreparedPuzzle | null> {
+    const ordinal = infinite.ordinal + 1;
+    if (preparedPuzzle?.ordinal === ordinal) return preparedPuzzle;
+    const plan = planFor(ordinal);
+    const key = generationKey(ordinal, plan, maxCandidates);
+    preparingPuzzle = true;
+    generationError = "";
+    toast = "正在准备下一关…";
+    try {
+      const prepared = await puzzleQueue.prepare(key, () => {
+        const generated = makePuzzle({
+          seed: `${infinite.playerSeed}|${ordinal}|v${CURRENT_VERSIONS.generator}`,
+          size: plan.size,
+          scoreMin: plan.scoreMin,
+          scoreMax: plan.scoreMax,
+          combinations: plan.combinations,
+          easyGeometry: plan.easyGeometry,
+          hardCap: plan.hardCap,
+          maxF: plan.maxF,
+          maxR: plan.maxR,
+          recentSignatures: infinite.history.slice(-20).map((entry) => entry.signature),
+          maxCandidates,
+        });
+        return generated
+          ? { ordinal, plan, level: tagGeneratedLevel(generated, plan.purpose) }
+          : null;
+      });
+      if (ordinal !== infinite.ordinal + 1) return null;
+      preparedPuzzle = prepared;
+      toast = "下一关准备好啦";
+      return prepared;
+    } catch {
+      if (ordinal !== infinite.ordinal + 1) return null;
+      generationError = "这次没准备好，当前进度已保留。";
+      toast = generationError;
+      return null;
+    } finally {
+      preparingPuzzle = false;
+    }
+  }
+
   function openingLevel() {
     return staticLevels[hashSeed(infinite.playerSeed) % staticLevels.length];
   }
@@ -214,22 +293,20 @@ export function createApp(env: Env) {
       play = infinite.play;
       play.settings = settings;
       ensureCatFaces(play);
-      if (play.completed) modal = "result";
+      if (play.completed) {
+        modal = "result";
+        void prepareNextPuzzle();
+      }
       persist();
       return;
     }
     const ordinal = infinite.ordinal > 0 ? infinite.ordinal : 1;
-    const plan = planLevel(
-      ordinal,
-      infinite.history,
-      infinite.sizeCounts,
-      rngFrom(`${infinite.playerSeed}|${ordinal}`),
-    );
+    const plan = planFor(ordinal);
     const generated =
       ordinal <= 5
         ? openingLevel()
         : makePuzzle({
-            seed: `${infinite.playerSeed}|${ordinal}|v5`,
+            seed: `${infinite.playerSeed}|${ordinal}|v${CURRENT_VERSIONS.generator}`,
             size: plan.size,
             scoreMin: plan.scoreMin,
             scoreMax: plan.scoreMax,
@@ -240,11 +317,20 @@ export function createApp(env: Env) {
             maxR: plan.maxR,
             recentSignatures: infinite.history.map((h) => h.signature),
             maxCandidates: 80,
-          }) || openingLevel();
+          });
+    if (!generated) {
+      generationError = "这次没准备好，请重试。";
+      scene = "home";
+      return;
+    }
     infinite.ordinal = ordinal;
+    infinite.versions = { ...CURRENT_VERSIONS };
     infinite.sizeCounts[generated.size] = (infinite.sizeCounts[generated.size] ?? 0) + 1;
     play = createPlay(
-      { ...generated, source: ordinal <= 5 ? "opening" : generated.source },
+      tagGeneratedLevel(
+        { ...generated, source: ordinal <= 5 ? "opening" : generated.source },
+        plan.purpose,
+      ),
       settings,
     );
     persist();
@@ -269,34 +355,24 @@ export function createApp(env: Env) {
     persist();
   }
 
-  function nextInfinite(): void {
-    if (!play) return;
-    infinite.ordinal += 1;
-    const plan = planLevel(
-      infinite.ordinal,
-      infinite.history,
-      infinite.sizeCounts,
-      rngFrom(`${infinite.playerSeed}|${infinite.ordinal}`),
-    );
-    toast = "正在印下一张…";
-    const generated =
-      makePuzzle({
-        seed: `${infinite.playerSeed}|${infinite.ordinal}|v5`,
-        size: plan.size,
-        scoreMin: plan.scoreMin,
-        scoreMax: plan.scoreMax,
-        combinations: plan.combinations,
-        easyGeometry: plan.easyGeometry,
-        hardCap: plan.hardCap,
-        maxF: plan.maxF,
-        maxR: plan.maxR,
-        recentSignatures: infinite.history.slice(-20).map((h) => h.signature),
-        maxCandidates: 80,
-      }) || openingLevel();
-    infinite.sizeCounts[generated.size] = (infinite.sizeCounts[generated.size] ?? 0) + 1;
-    play = createPlay(generated, settings);
+  async function nextInfinite(): Promise<void> {
+    if (!play || !play.completed || preparingPuzzle) return;
+    if (!preparedPuzzle) {
+      puzzleQueue.clear();
+      await prepareNextPuzzle(800);
+    }
+    const prepared = preparedPuzzle;
+    if (!prepared || prepared.ordinal !== infinite.ordinal + 1) return;
+    infinite.ordinal = prepared.ordinal;
+    infinite.versions = { ...CURRENT_VERSIONS };
+    infinite.sizeCounts[prepared.level.size] =
+      (infinite.sizeCounts[prepared.level.size] ?? 0) + 1;
+    play = createPlay(prepared.level, settings);
+    preparedPuzzle = null;
+    puzzleQueue.clear();
     modal = null;
     toast = "";
+    generationError = "";
     persist();
   }
 
@@ -315,7 +391,7 @@ export function createApp(env: Env) {
       if (result.flawless) infinite.stats.flawless += 1;
       const rec: PaceHistory = {
         score: play.level.rating?.score ?? 0,
-        purpose: "normal",
+        purpose: play.level.generation?.purpose ?? "normal",
         size: play.level.size,
         signature: play.level.signature ?? play.level.id,
       };
@@ -323,6 +399,7 @@ export function createApp(env: Env) {
     }
     modal = "result";
     persist();
+    if (mode === "infinite") void prepareNextPuzzle();
   }
 
   function cellAt(x: number, y: number): number | null {
@@ -1165,9 +1242,18 @@ export function createApp(env: Env) {
       if (mode === "infinite") {
         const go = addHit("next", { x: box.x + 24, y: box.y + box.h - 70, w: box.w - 48, h: 46 });
         fillPrimary(ctx, go, 18);
+        if (generationError) {
+          ctx.fillStyle = theme.wrong;
+          ctx.font = "12px sans-serif";
+          ctx.fillText(generationError, env.width / 2, go.y - 28);
+        }
         ctx.fillStyle = "#ffffff";
         ctx.font = "800 16px sans-serif";
-        ctx.fillText("下一关", go.x + go.w / 2, go.y + 14);
+        ctx.fillText(
+          preparingPuzzle ? "准备中…" : generationError ? "重试" : "下一关",
+          go.x + go.w / 2,
+          go.y + 14,
+        );
       }
     }
 
@@ -1230,7 +1316,7 @@ export function createApp(env: Env) {
       else modal = null;
       hint = null;
     }
-    if (id === "next") nextInfinite();
+    if (id === "next") void nextInfinite();
     if (id === "doRestart" && play) {
       restart(play, mode);
       modal = null;
@@ -1240,6 +1326,7 @@ export function createApp(env: Env) {
       settings = defaultSettings();
       shell = { settings, daily: {} };
       infinite = {
+        versions: { ...CURRENT_VERSIONS },
         playerSeed: newSeed(),
         ordinal: 0,
         play: null,
@@ -1248,6 +1335,10 @@ export function createApp(env: Env) {
         sizeCounts: { 6: 0, 7: 0, 8: 0, 9: 0 },
       };
       play = null;
+      preparedPuzzle = null;
+      puzzleQueue.clear();
+      preparingPuzzle = false;
+      generationError = "";
       scene = "home";
       modal = null;
     }

@@ -18,6 +18,7 @@ export interface ShellSave {
 }
 
 export interface InfiniteSave {
+  versions: { generator: number; pacer: number };
   playerSeed: string;
   ordinal: number;
   play: PlayState | null;
