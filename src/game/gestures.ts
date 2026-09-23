@@ -41,8 +41,8 @@ export class GestureMachine {
     this.secondTap = false;
   }
 
-  move(cell: number): void {
-    if (this.touchId === null || cell === this.lastCell) return;
+  move(cell: number, touchId: number): void {
+    if (this.touchId !== touchId || cell === this.lastCell) return;
     this.dragging = true;
     this.secondTap = false;
     this.clearTimer();
@@ -51,8 +51,8 @@ export class GestureMachine {
     this.emit({ type: "preview", from: this.startCell, to: cell });
   }
 
-  end(): void {
-    if (this.touchId === null) return;
+  end(touchId: number): void {
+    if (this.touchId !== touchId) return;
     this.touchId = null;
     if (this.dragging) {
       this.emit({ type: "drag", from: this.startCell, to: this.lastCell });
@@ -69,7 +69,8 @@ export class GestureMachine {
     this.cancelTimer = this.clock.later(TAP_MS, () => this.flushToggle());
   }
 
-  cancel(): void {
+  cancel(touchId?: number): void {
+    if (touchId !== undefined && this.touchId !== touchId) return;
     this.touchId = null;
     this.dragging = false;
     this.secondTap = false;

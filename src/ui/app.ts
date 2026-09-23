@@ -23,6 +23,7 @@ import { GestureMachine } from "../game/gestures";
 import {
   INFINITE_KEY,
   SAVE_KEY,
+  dailyRecordKey,
   readJson,
   wxStore,
   writeJson,
@@ -47,12 +48,18 @@ import {
   difficultyName,
   fillPrimary,
   fillRound,
-  hit,
   strokeRound,
   theme,
   type Rect,
 } from "./theme";
 import { defaultSettings, type HintPlan, type Settings } from "../types";
+import {
+  beginPress,
+  keepPress,
+  releasePress,
+  type PressState,
+  type PressTarget,
+} from "./input";
 
 type Scene = "home" | "play";
 type Modal =
@@ -65,11 +72,6 @@ type Modal =
   | "restart"
   | "clear";
 type Mode = "infinite" | "daily";
-
-interface HitTarget {
-  id: string;
-  rect: Rect;
-}
 
 const store = wxStore();
 
@@ -136,7 +138,9 @@ export function createApp(env: Env) {
   let lastTs = 0;
   let visible = true;
   let focus = 0;
-  let hits: HitTarget[] = [];
+  let hits: PressTarget[] = [];
+  let uiPress: PressState | null = null;
+  let activeTouchId: number | null = null;
   let boardRect: Rect = { x: 0, y: 0, w: 1, h: 1 };
   let previewDrag: { from: number; to: number } | null = null;
   let toast = "";
@@ -168,7 +172,7 @@ export function createApp(env: Env) {
   function persist(): void {
     shell.settings = settings;
     if (mode === "daily" && play) {
-      const key = dailyKey();
+      const key = dailyRecordKey(play);
       const prev = shell.daily[key];
       shell.daily[key] = {
         play,
@@ -290,7 +294,12 @@ export function createApp(env: Env) {
   }
 
   function onWin(): void {
-    if (!play || play.recorded) return;
+    if (!play) return;
+    if (play.recorded) {
+      modal = "result";
+      persist();
+      return;
+    }
     play.recorded = true;
     const result = resultOf(play);
     if (mode === "infinite") {
@@ -1241,38 +1250,61 @@ export function createApp(env: Env) {
   }
 
   function pointer(kind: "start" | "move" | "end" | "cancel", x: number, y: number, id: number): void {
-    if (kind === "cancel") {
-      gestures.cancel();
-      previewDrag = null;
+    if (kind === "start") {
+      if (activeTouchId !== null) return;
+      activeTouchId = id;
+    } else if (activeTouchId !== id) {
       return;
     }
-    if (modal) {
-      if (kind === "end") {
-        const target = [...hits].reverse().find((h) => hit(h.rect, x, y));
-        if (target) tap(target.id);
+    try {
+      if (kind === "cancel") {
+        gestures.cancel(id);
+        if (uiPress?.touchId === id) uiPress = null;
+        previewDrag = null;
+        return;
       }
-      return;
-    }
-    if (scene === "home") {
-      if (kind === "end") {
-        const target = [...hits].reverse().find((h) => hit(h.rect, x, y));
-        if (target) tap(target.id);
+      if (modal) {
+        if (kind === "start" && !uiPress) uiPress = beginPress(hits, x, y, id);
+        if (kind === "move") uiPress = keepPress(uiPress, hits, x, y, id);
+        if (kind === "end") {
+          const target = releasePress(uiPress, hits, x, y, id);
+          if (uiPress?.touchId === id) uiPress = null;
+          if (target) tap(target);
+        }
+        return;
       }
-      return;
-    }
-    const cell = cellAt(x, y);
-    if (cell !== null && play && !play.completed) {
-      if (kind === "start") gestures.start(cell, id);
-      if (kind === "move") gestures.move(cell);
-      if (kind === "end") gestures.end();
-      focus = cell;
-      return;
-    }
-    if (kind === "start") gestures.cancel();
-    if (kind === "end") {
-      previewDrag = null;
-      const target = [...hits].reverse().find((h) => hit(h.rect, x, y));
-      if (target) tap(target.id);
+      if (scene === "home") {
+        if (kind === "start" && !uiPress) uiPress = beginPress(hits, x, y, id);
+        if (kind === "move") uiPress = keepPress(uiPress, hits, x, y, id);
+        if (kind === "end") {
+          const target = releasePress(uiPress, hits, x, y, id);
+          if (uiPress?.touchId === id) uiPress = null;
+          if (target) tap(target);
+        }
+        return;
+      }
+      const cell = cellAt(x, y);
+      if (cell !== null && play && !play.completed) {
+        if (kind === "start") gestures.start(cell, id);
+        if (kind === "move") gestures.move(cell, id);
+        if (kind === "end") gestures.end(id);
+        focus = cell;
+        return;
+      }
+      if (kind === "start") {
+        gestures.cancel(id);
+        if (!uiPress) uiPress = beginPress(hits, x, y, id);
+      }
+      if (kind === "move") uiPress = keepPress(uiPress, hits, x, y, id);
+      if (kind === "end") {
+        gestures.cancel(id);
+        previewDrag = null;
+        const target = releasePress(uiPress, hits, x, y, id);
+        if (uiPress?.touchId === id) uiPress = null;
+        if (target) tap(target);
+      }
+    } finally {
+      if (kind === "end" || kind === "cancel") activeTouchId = null;
     }
   }
 
@@ -1298,6 +1330,7 @@ export function createApp(env: Env) {
       paintPaper(ctx, env.width, env.height);
       if (scene === "home") drawHome(ctx);
       else drawPlay(ctx);
+      if (modal) hits = [];
       drawModal(ctx);
     } catch (err) {
       ctx.fillStyle = theme.seal;
@@ -1317,25 +1350,23 @@ export function createApp(env: Env) {
   }
 
   wx.onTouchStart((e) => {
-    const t = e.changedTouches[0];
-    if (t) pointer("start", t.clientX, t.clientY, t.identifier);
+    for (const t of e.changedTouches) pointer("start", t.clientX, t.clientY, t.identifier);
   });
   wx.onTouchMove((e) => {
-    const t = e.changedTouches[0];
-    if (t) pointer("move", t.clientX, t.clientY, t.identifier);
+    for (const t of e.changedTouches) pointer("move", t.clientX, t.clientY, t.identifier);
   });
   wx.onTouchEnd((e) => {
-    const t = e.changedTouches[0];
-    if (t) pointer("end", t.clientX, t.clientY, t.identifier);
+    for (const t of e.changedTouches) pointer("end", t.clientX, t.clientY, t.identifier);
   });
   wx.onTouchCancel((e) => {
-    const t = e.changedTouches[0];
-    if (t) pointer("cancel", t.clientX, t.clientY, t.identifier);
+    for (const t of e.changedTouches) pointer("cancel", t.clientX, t.clientY, t.identifier);
   });
   wx.onKeyDown?.((e) => key(e.code || e.key || ""));
   wx.onHide(() => {
     visible = false;
     gestures.cancel();
+    uiPress = null;
+    activeTouchId = null;
     previewDrag = null;
     persist();
   });

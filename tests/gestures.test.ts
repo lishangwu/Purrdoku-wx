@@ -29,7 +29,7 @@ describe("gestures", () => {
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
     g.start(4, 1);
-    g.end();
+    g.end(1);
     assert.equal(actions.length, 0);
     clock.flush(TAP_MS);
     assert.deepEqual(actions, [{ type: "toggle", index: 4 }]);
@@ -40,9 +40,9 @@ describe("gestures", () => {
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
     g.start(4, 1);
-    g.end();
+    g.end(1);
     g.start(4, 1);
-    g.end();
+    g.end(1);
     assert.deepEqual(actions, [{ type: "place", index: 4 }]);
     clock.flush(TAP_MS);
     assert.equal(actions.length, 1);
@@ -53,10 +53,10 @@ describe("gestures", () => {
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
     g.start(1, 1);
-    g.end();
+    g.end(1);
     g.start(2, 1);
     assert.deepEqual(actions, [{ type: "toggle", index: 1 }]);
-    g.end();
+    g.end(1);
     clock.flush(TAP_MS);
     assert.deepEqual(actions[1], { type: "toggle", index: 2 });
   });
@@ -66,10 +66,35 @@ describe("gestures", () => {
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
     g.start(0, 1);
-    g.move(3);
-    g.end();
+    g.move(3, 1);
+    g.end(1);
     assert.deepEqual(actions.at(-1), { type: "drag", from: 0, to: 3 });
     clock.flush(TAP_MS);
     assert.ok(actions.every((a) => a.type !== "toggle"));
+  });
+
+  it("ignores move and end events from another touch", () => {
+    const actions: GestureAction[] = [];
+    const clock = mockClock();
+    const g = new GestureMachine(clock, (a) => actions.push(a));
+    g.start(4, 7);
+    g.move(5, 8);
+    g.end(8);
+    clock.flush(TAP_MS);
+    assert.deepEqual(actions, []);
+    g.end(7);
+    clock.flush(TAP_MS);
+    assert.deepEqual(actions, [{ type: "toggle", index: 4 }]);
+  });
+
+  it("cancels only the matching active touch", () => {
+    const actions: GestureAction[] = [];
+    const clock = mockClock();
+    const g = new GestureMachine(clock, (a) => actions.push(a));
+    g.start(4, 7);
+    g.cancel(8);
+    g.end(7);
+    clock.flush(TAP_MS);
+    assert.deepEqual(actions, [{ type: "toggle", index: 4 }]);
   });
 });

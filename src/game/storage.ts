@@ -1,6 +1,7 @@
 import type { Settings } from "../types";
 import type { PlayState } from "../game/play";
 import type { PaceHistory } from "../engine/pacer";
+import { dailyKey } from "./daily";
 
 export const SAVE_KEY = "purrdoku.save.v1";
 export const INFINITE_KEY = "purrdoku.infinite.v1";
@@ -28,6 +29,13 @@ export interface InfiniteSave {
 export interface StoragePort {
   get(key: string): unknown;
   set(key: string, value: unknown): void;
+}
+
+export function dailyRecordKey(
+  play: Pick<PlayState, "level">,
+  fallback = dailyKey(),
+): string {
+  return play.level.id.startsWith("daily-") ? play.level.id : fallback;
 }
 
 export function readJson<T>(store: StoragePort, key: string, fallback: T): T {
