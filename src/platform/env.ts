@@ -6,6 +6,7 @@ export interface Env {
   pixelRatio: number;
   insetTop: number;
   insetBottom: number;
+  menuButton: WxMenuButtonRect | null;
 }
 
 export interface WindowMetrics {
@@ -36,6 +37,7 @@ export function createEnv(): Env {
     pixelRatio: 2,
     insetTop: 24,
     insetBottom: 0,
+    menuButton: null,
   };
   fit(env);
   return env;
@@ -49,6 +51,12 @@ export function fit(env: Env): void {
   env.pixelRatio = metrics.pixelRatio;
   env.insetTop = metrics.insetTop;
   env.insetBottom = metrics.insetBottom;
+  try {
+    const menu = wx.getMenuButtonBoundingClientRect?.();
+    env.menuButton = menu && menu.width > 0 && menu.height > 0 ? menu : null;
+  } catch {
+    env.menuButton = null;
+  }
   env.canvas.width = Math.round(env.width * env.pixelRatio);
   env.canvas.height = Math.round(env.height * env.pixelRatio);
   env.ctx.scale(env.pixelRatio, env.pixelRatio);

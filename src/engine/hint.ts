@@ -37,6 +37,7 @@ export function explainedHint(
         ? i % n === u - n
         : flat[i] === u - 2 * n;
 
+  let rule: HintPlan["rule"];
   const plan = (
     kind: HintPlan["kind"],
     title: string,
@@ -46,6 +47,7 @@ export function explainedHint(
     units: number[] = [],
   ): HintPlan => ({
     kind,
+    rule,
     title,
     reason,
     targets,
@@ -94,6 +96,8 @@ export function explainedHint(
   );
   const logic = logicalSolve(level, true, 200_000, { cats, excluded });
   const step = logic.steps[0];
+  // Keep the solver's rule identity available to the presentation layer.
+  rule = step && (step.rule === "B1" || step.rule === "B3" || step.rule === "B4" || step.rule === "C1") ? step.rule : undefined;
   if (step) {
     const available = board.flatMap((s, i) => (s === "empty" ? [i] : []));
     const sources = available.filter((i) =>

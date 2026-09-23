@@ -1,6 +1,12 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { catIdleFrame, regionFlashAmount, sampleBoardMotion } from "../src/ui/board-motion";
+import {
+  CAT_IDLE_CYCLE_MS,
+  CAT_IDLE_FRAME_MS,
+  catIdleFrame,
+  regionFlashAmount,
+  sampleBoardMotion,
+} from "../src/ui/board-motion";
 
 describe("board motion", () => {
   it("animates marks in and out over the H5 timing", () => {
@@ -23,7 +29,12 @@ describe("board motion", () => {
   it("flashes once and keeps idle cats static when motion is paused", () => {
     assert.ok(regionFlashAmount(225) > 0.15);
     assert.equal(regionFlashAmount(450), 0);
-    assert.equal(catIdleFrame(2790, 0, true), 1);
+    assert.equal(CAT_IDLE_FRAME_MS, 45);
+    assert.equal(CAT_IDLE_CYCLE_MS, 360);
+    for (let frame = 0; frame < 8; frame++) {
+      assert.equal(catIdleFrame(2700 + frame * CAT_IDLE_FRAME_MS, 0, true), frame);
+    }
+    assert.equal(catIdleFrame(2700 + CAT_IDLE_CYCLE_MS, 0, true), 0);
     assert.equal(catIdleFrame(2790, 0, false), 0);
     assert.notEqual(catIdleFrame(2790, 1, true), catIdleFrame(2790, 0, true));
   });

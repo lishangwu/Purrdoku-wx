@@ -117,6 +117,15 @@ declare interface HTMLCanvasElementLike {
   createImage?(): CanvasImageSourceLike;
 }
 
+declare interface WxMenuButtonRect {
+  width: number;
+  height: number;
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
 declare interface WxAudioParamLike {
   value: number;
   setValueAtTime(value: number, time: number): void;
@@ -152,6 +161,7 @@ declare const wx: {
   createImage?(): CanvasImageSourceLike;
   getSystemInfoSync(): WxSystemInfo;
   getWindowInfo?(): WxSystemInfo;
+  getMenuButtonBoundingClientRect?(): WxMenuButtonRect;
   onWindowResize?(cb: (res: { windowWidth: number; windowHeight: number }) => void): void;
   onTouchStart(cb: (e: WxTouchEvent) => void): void;
   onTouchMove(cb: (e: WxTouchEvent) => void): void;

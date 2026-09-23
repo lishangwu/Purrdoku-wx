@@ -1,3 +1,4 @@
+import { CAT_SPRITE_PATHS } from "./cat-variants";
 import type { CellState, HintPlan, Level, Settings, Snapshot } from "../types";
 import {
   boardKey,
@@ -29,7 +30,7 @@ export interface PlayState {
   settings: Settings;
 }
 
-export const CAT_FACE_COUNT = 12;
+export const CAT_FACE_COUNT = CAT_SPRITE_PATHS.length;
 
 export function randomCatFace(): number {
   return Math.floor(Math.random() * CAT_FACE_COUNT);
@@ -43,11 +44,10 @@ function emptyFaces(size: number): number[] {
 export function ensureCatFaces(play: PlayState): void {
   const n = play.board.length;
   if (!play.catFaces || play.catFaces.length !== n) {
-    play.catFaces = play.board.map((cell) => (cell === "cat" ? randomCatFace() : -1));
-    return;
+    play.catFaces = Array.from({ length: n }, (_, i) => play.catFaces?.[i] ?? -1);
   }
   for (let i = 0; i < n; i++) {
-    if (play.board[i] === "cat" && (play.catFaces[i] ?? -1) < 0) {
+    if (play.board[i] === "cat" && (!Number.isInteger(play.catFaces[i]) || play.catFaces[i] < 0 || play.catFaces[i] >= CAT_FACE_COUNT)) {
       play.catFaces[i] = randomCatFace();
     }
     if (play.board[i] !== "cat") play.catFaces[i] = -1;
@@ -55,7 +55,6 @@ export function ensureCatFaces(play: PlayState): void {
 }
 
 function syncFaces(play: PlayState, prev: CellState[], next: CellState[]): void {
-  ensureCatFaces(play);
   for (let i = 0; i < next.length; i++) {
     if (next[i] === "cat" && prev[i] !== "cat") play.catFaces[i] = randomCatFace();
     else if (next[i] !== "cat") play.catFaces[i] = -1;
@@ -184,7 +183,7 @@ export function previewHintBoard(
   level: Level,
   board: CellState[],
   plan: HintPlan,
-  autoMark: boolean,
+  _autoMark: boolean,
 ): CellState[] | null {
   if (plan.boardKey !== boardKey(board)) return null;
   const next = board.slice();
@@ -198,7 +197,7 @@ export function previewHintBoard(
   }
   let result = next;
   for (const i of plan.targets) {
-    const placed = placeCat(level, result, i, autoMark);
+    const placed = placeCat(level, result, i, false);
     if (placed) result = placed.board;
   }
   return result;

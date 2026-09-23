@@ -24,7 +24,8 @@ import { dailyIndex, dailyKey, localDate } from "../game/daily";
 import { GestureMachine } from "../game/gestures";
 import { PuzzleQueue } from "../game/puzzle-queue";
 import { milestoneFor, sound } from "../game/feedback";
-import { regionColorNames } from "../engine/hint";
+import { presentHint } from "./hint-presentation";
+import { HintSession } from "./hint-session";
 import {
   INFINITE_KEY,
   SAVE_KEY,
@@ -73,6 +74,7 @@ import {
 } from "./board-motion";
 import type { CellState } from "../types";
 import { shouldRenderFrame } from "./frame-pacer";
+import { playTopBarLayout } from "./top-bar-layout";
 
 type Scene = "home" | "play";
 type Modal =
@@ -159,6 +161,7 @@ export function createApp(env: Env) {
   let play: PlayState | null = infinite.play;
   if (play) ensureCatFaces(play);
   let hint: HintPlan | null = null;
+  let hintSession: HintSession | null = null;
   let lastTs = 0;
   let lastDrawTs = 0;
   let visible = true;
@@ -717,9 +720,10 @@ export function createApp(env: Env) {
     const cx = env.width / 2;
     const n = play.level.size;
     const narrow = box.w < 340;
+    const topBar = playTopBarLayout(box.y, env.menuButton?.bottom ?? null);
 
     // —— 顶栏圆钮 ——
-    const topBtn = addHit("back", { x: box.x, y: box.y + 2, w: 40, h: 40 });
+    const topBtn = addHit("back", { x: box.x, y: topBar.controlsY, w: 40, h: 40 });
     const bx = topBtn.x + topBtn.w / 2;
     const by = topBtn.y + topBtn.h / 2;
     ctx.fillStyle = theme.surface;
@@ -736,7 +740,7 @@ export function createApp(env: Env) {
     ctx.lineTo(bx + 3, by + 7);
     ctx.stroke();
 
-    const more = addHit("more", { x: box.x + box.w - 40, y: box.y + 2, w: 40, h: 40 });
+    const more = addHit("more", { x: box.x + box.w - 40, y: topBar.settingsY, w: 40, h: 40 });
     const mx = more.x + more.w / 2;
     const my = more.y + more.h / 2;
     ctx.fillStyle = theme.surface;
@@ -771,7 +775,7 @@ export function createApp(env: Env) {
     ctx.fillText(title, cx, box.y + 32);
 
     // 下行：绿点 + 难度 · N×N 与计时
-    const statusY = box.y + 54;
+    const statusY = topBar.statusY;
     const diffLabel = `${difficultyName[play.level.difficulty]} · ${n}×${n}`;
     ctx.fillStyle = theme.success;
     ctx.beginPath();
@@ -785,11 +789,12 @@ export function createApp(env: Env) {
     const t = Math.floor(play.elapsed);
     const clock = `${String(Math.floor(t / 60)).padStart(2, "0")}:${String(t % 60).padStart(2, "0")}`;
     ctx.textAlign = "right";
-    ctx.fillText(clock, box.x + box.w - 4, statusY);
+    const clockRight = topBar.settingsY > topBar.controlsY ? more.x - 8 : box.x + box.w - 4;
+    ctx.fillText(clock, clockRight, statusY);
 
     // 白进度卡
     const cats = play.board.filter((c) => c === "cat").length;
-    const progress: Rect = { x: box.x, y: statusY + 16, w: box.w, h: 52 };
+    const progress: Rect = { x: box.x, y: topBar.contentY, w: box.w, h: 52 };
     card(ctx, progress, 16);
     drawMiniCat(ctx, progress.x + 22, progress.y + progress.h / 2, 28);
     ctx.fillStyle = theme.ink;
@@ -951,7 +956,6 @@ export function createApp(env: Env) {
         }
         const cell = shown[i];
         if (cell === "cat") {
-          ensureCatFaces(play);
           const motion = boardMotions.get(i);
           const sample = motion?.kind === "cat-in" && settings.animationsEnabled
             ? sampleBoardMotion(motion.kind, motionTime - motion.startedAt)
@@ -964,6 +968,7 @@ export function createApp(env: Env) {
             s,
             catIdleFrame(visualTime, i, settings.animationsEnabled),
             sample?.scale ?? 1,
+            play.catFaces[i],
           );
         }
         const motion = boardMotions.get(i);
@@ -1053,12 +1058,12 @@ export function createApp(env: Env) {
 
   function modalFrame(): Rect {
     const w = Math.min(340, env.width - 28);
-    const h = Math.min(460, env.height - 120);
+    const h = modal === "settings" ? Math.min(645, env.height - 48) : Math.min(460, env.height - 120);
     return { x: (env.width - w) / 2, y: (env.height - h) / 2, w, h };
   }
 
   function drawHintSheet(ctx: CanvasRenderingContext2DLike): void {
-    if (!play || !hint) return;
+    if (!play || !hint || !hintSession) return;
     const n = play.level.size;
     const padX = 20;
     const cardW = Math.min(360, env.width - padX * 2);
@@ -1074,22 +1079,18 @@ export function createApp(env: Env) {
     ctx.fillStyle = "rgba(41,59,82,0.48)";
     ctx.fillRect(0, 0, env.width, env.height);
 
-    const titleLines = wrapText(ctx, hint.title, textW - 36, "800 18px sans-serif");
-    const reasonLines = wrapText(ctx, hint.reason, textW, "14px sans-serif");
+    const presentation = presentHint(play.level, hint, hintSession.mode);
+    const frame = hintSession.frame(motionTime, settings.animationsEnabled, hint.targets.length);
+    const titleLines = wrapText(ctx, presentation.title, textW - 36, "800 18px sans-serif");
+    const currentStep = presentation.steps[frame.stage]!;
+    const reasonLines = wrapText(ctx, currentStep.description, textW, "14px sans-serif");
     const titleBlock = titleLines.length * 24;
-    const reasonBlock = reasonLines.length * 21;
-    const rowUnit = hint.units?.find((u) => u < n);
+    const reasonBlock = Math.max(...presentation.steps.map(step => wrapText(ctx, step.description, textW, "14px sans-serif").length)) * 21;
+    const rowUnit = hintSession.mode === "direct" ? undefined : hint.units?.find((u) => u < n);
     const previewBoard =
       previewHintBoard(play.level, play.board, hint, settings.autoMarkEnabled) ?? play.board;
-    const unitLabels = (hint.units ?? []).slice(0, 2).map((unit) =>
-      unit < n
-        ? `第${unit + 1}行`
-        : unit < n * 2
-          ? `第${unit - n + 1}列`
-          : `${regionColorNames[unit - n * 2] ?? "颜色"}区域`,
-    );
     const needLabel = rowUnit !== undefined;
-    const labelW = needLabel ? 40 : 0;
+    const labelW = needLabel ? 52 : 0;
 
     // 整盘 n×n，按可用高度上下居中整块（卡片+按钮）
     const safeTop = env.insetTop + 12;
@@ -1152,12 +1153,13 @@ export function createApp(env: Env) {
     ctx.textBaseline = "top";
     ctx.fillStyle = theme.ink;
     ctx.font = "14px sans-serif";
+    const reasonY = y;
     for (const line of reasonLines) {
       ctx.fillText(line, cardX + inner, y);
       y += 21;
     }
 
-    y += 12;
+    y = reasonY + reasonBlock + 12;
     const miniX = cardX + (cardW - miniW + labelW) / 2;
     const miniY = y;
     fillRound(
@@ -1169,11 +1171,18 @@ export function createApp(env: Env) {
 
     if (rowUnit !== undefined) {
       const ly = miniY + rowUnit * cell + cell / 2;
-      ctx.fillStyle = theme.muted;
-      ctx.font = "11px sans-serif";
-      ctx.textAlign = "right";
+      const labelRect: Rect = {
+        x: miniX - labelW + 2,
+        y: ly - Math.min(14, cell * 0.38),
+        w: labelW - 10,
+        h: Math.min(28, cell * 0.76),
+      };
+      fillRound(ctx, labelRect, theme.accent, 7);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "700 10px sans-serif";
+      ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(`第${rowUnit + 1}行`, miniX - 8, ly);
+      ctx.fillText(`第${rowUnit + 1}行`, labelRect.x + labelRect.w / 2, ly);
     }
 
     const gap = Math.max(1, cell * 0.08);
@@ -1190,48 +1199,71 @@ export function createApp(env: Env) {
           theme.regions[play.level.regions[r]![c]! % theme.regions.length]!,
           rr,
         );
-        if (hint.targets.includes(i)) {
-          strokeRound(ctx, { x, y: yy, w: s, h: s }, "#ffffff", rr, Math.max(1.5, cell * 0.08));
+        const targetIndex = hint.targets.indexOf(i);
+        const progress = targetIndex < 0 ? 0 : frame.progress(targetIndex);
+        const focused = currentStep.focusCells.includes(i);
+        const emphasis = currentStep.resultCells.includes(i) ? frame.resultEmphasis(targetIndex) : null;
+        if (!focused) fillRound(ctx, { x, y: yy, w: s, h: s }, "rgba(255,255,255,0.48)", rr);
+        if (focused && emphasis === null) {
+          ctx.save();
+          ctx.globalAlpha = 0.4 + frame.transition * 0.6;
+          strokeRound(ctx, { x, y: yy, w: s, h: s }, "#ffffff", rr, 1.5 + Math.sin(frame.transition * Math.PI) * 0.4);
+          ctx.restore();
         }
-        const cellState = previewBoard[i];
+        const cellState = progress > 0 ? previewBoard[i] : play.board[i];
+        ctx.save();
+        if (progress > 0) ctx.globalAlpha = progress;
         if (cellState === "cat") {
-          ensureCatFaces(play);
-          drawMiniCat(ctx, x + s / 2, yy + s / 2, s, 0);
+          const scale = progress > 0 ? (progress < 0.7 ? 0.9 + progress / 0.7 * 0.15 : 1.05 - (progress - 0.7) / 0.3 * 0.05) : 1;
+          drawMiniCat(ctx, x + s / 2, yy + s / 2, s * scale, 0, 1, play.catFaces[i] >= 0 ? play.catFaces[i] : 0);
         }
         if (cellState === "markedX") drawMark(ctx, x + s / 2, yy + s / 2, s, false);
         if (cellState === "wrongX") drawMark(ctx, x + s / 2, yy + s / 2, s, true);
-        if (hint.sources.includes(i)) {
-          const dx = x + s * 0.72;
-          const dy = yy + s * 0.72;
-          const dr = Math.max(2, s * 0.12);
-          ctx.fillStyle = "#ffffff";
-          ctx.beginPath();
-          ctx.moveTo(dx, dy - dr);
-          ctx.lineTo(dx + dr, dy);
-          ctx.lineTo(dx, dy + dr);
-          ctx.lineTo(dx - dr, dy);
-          ctx.closePath();
-          ctx.fill();
+        ctx.restore();
+        if (emphasis !== null) {
+          // A lavender underlay keeps the breathing white edge visible on pale regions.
+          // Both strokes stay inset and keep a fixed width, so the grid never shifts.
+          const lineWidth = Math.min(3.2, s * 0.18);
+          const outerWidth = lineWidth + Math.min(1.4, s * 0.07);
+          const inset = outerWidth / 2;
+          const border = { x: x + inset, y: yy + inset, w: s - outerWidth, h: s - outerWidth };
+          const radius = Math.max(1, rr - inset);
+          ctx.save();
+          ctx.globalAlpha = 0.85 * progress;
+          strokeRound(ctx, border, theme.accent, radius, outerWidth);
+          ctx.globalAlpha = (0.3 + emphasis * 0.7) * progress;
+          ctx.shadowColor = "rgba(255,255,255,0.9)";
+          ctx.shadowBlur = Math.min(3.5, s * 0.14) * emphasis;
+          ctx.shadowOffsetX = 0;
+          ctx.shadowOffsetY = 0;
+          strokeRound(ctx, border, "#ffffff", radius, lineWidth);
+          ctx.restore();
         }
       }
     }
 
     y = miniY + miniH + 16;
-    const legend = hint.kind === "correct"
-      ? "白框：取消错误的 ×"
-      : hint.sources.length
-        ? "白框：应用后的变化  ·  ◆：推理依据"
-        : "白框：应用后的变化";
+    ctx.font = "13px sans-serif";
     ctx.fillStyle = theme.muted;
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "left";
-    ctx.textBaseline = "top";
-    if (unitLabels.length) {
-      ctx.fillText(`推理范围：${unitLabels.join(" · ")}`, cardX + inner, y);
-      y += 17;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    if (hintSession.mode !== "direct") ctx.fillText(`${frame.stage + 1} / ${presentation.steps.length}`, env.width / 2, y + 12);
+    if (hintSession.mode === "interactive") {
+      if (frame.stage > 0) {
+        const prev = addHit("hintPrevious", { x: cardX + inner, y, w: 90, h: 30 });
+        ctx.fillText("‹ 上一步", prev.x + prev.w / 2, y + 12);
+      }
+      if (frame.stage < presentation.steps.length - 1) {
+        const next = addHit("hintNext", { x: cardX + cardW - inner - 90, y, w: 90, h: 30 });
+        ctx.fillStyle = theme.accent;
+        ctx.fillText("下一步 ›", next.x + next.w / 2, y + 12);
+      }
+    } else if (hintSession.mode === "auto" && frame.stage < presentation.steps.length - 1) {
+      addHit("hintNext", { x: cardX + inner, y: reasonY, w: textW, h: miniY + miniH - reasonY });
+      ctx.textAlign = "left";
+      ctx.font = "11px sans-serif";
+      ctx.fillText("轻点棋盘继续", cardX + inner, y + 12);
     }
-    ctx.fillText(legend, cardX + inner, y);
-
     const applyW = Math.min(320, env.width - 48);
     const apply: Rect = {
       x: (env.width - applyW) / 2,
@@ -1239,13 +1271,15 @@ export function createApp(env: Env) {
       w: applyW,
       h: applyH,
     };
-    addHit("applyHint", apply);
-    fillPrimary(ctx, apply, applyH * 0.5);
-    ctx.fillStyle = "#ffffff";
-    ctx.font = "800 17px sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText("应用", apply.x + apply.w / 2, apply.y + apply.h / 2);
+    if (frame.complete) {
+      addHit("applyHint", apply);
+      fillPrimary(ctx, apply, applyH * 0.5);
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "800 17px sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.fillText(presentation.cta, apply.x + apply.w / 2, apply.y + apply.h / 2);
+    }
 
     const think = addHit("gotIt", {
       x: apply.x,
@@ -1255,6 +1289,8 @@ export function createApp(env: Env) {
     });
     ctx.fillStyle = "rgba(255,255,255,0.88)";
     ctx.font = "14px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
     ctx.fillText("先自己想想", think.x + think.w / 2, think.y + thinkH / 2);
   }
 
@@ -1336,28 +1372,44 @@ export function createApp(env: Env) {
       ctx.fillStyle = theme.muted;
       ctx.font = "14px sans-serif";
       ctx.fillText("调成你喜欢的样子。", box.x + 24, box.y + 56);
-      const rows: { key: keyof Settings; label: string; hint: string }[] = [
+      const rows: { key: Exclude<keyof Settings, "hintMode">; label: string; hint: string }[] = [
         { key: "autoMarkEnabled", label: "自动标记", hint: "放对后自动标上 ×" },
         { key: "soundEnabled", label: "游戏音效", hint: "轻轻一声，回应每一步" },
         { key: "musicEnabled", label: "背景音乐", hint: "简单、舒缓的原创旋律" },
         { key: "hapticEnabled", label: "触觉反馈", hint: "轻触时微微震动" },
         { key: "animationsEnabled", label: "动态效果", hint: "眨眼、弹出与柔和过渡" },
       ];
+      const rowGap = Math.min(44, (box.h - 360) / 5);
       rows.forEach((row, i) => {
-        const y = box.y + 88 + i * 52;
+        const y = box.y + 80 + i * rowGap;
         ctx.textAlign = "left";
         ctx.fillStyle = theme.ink;
         ctx.font = "16px sans-serif";
         ctx.fillText(row.label, box.x + 24, y);
         ctx.fillStyle = theme.muted;
         ctx.font = "12px sans-serif";
-        ctx.fillText(row.hint, box.x + 24, y + 22);
+        if (rowGap >= 38) ctx.fillText(row.hint, box.x + 24, y + 22);
         const sw = addHit(`set:${row.key}`, { x: box.x + box.w - 78, y: y + 4, w: 50, h: 30 });
         fillRound(ctx, sw, settings[row.key] ? theme.accent : theme.line, 15);
         ctx.fillStyle = theme.cream;
         ctx.beginPath();
         ctx.arc(settings[row.key] ? sw.x + 34 : sw.x + 16, sw.y + 15, 10, 0, Math.PI * 2);
         ctx.fill();
+      });
+      ctx.textAlign = "left";
+      ctx.fillStyle = theme.ink;
+      ctx.font = "700 14px sans-serif";
+      const modeY = box.y + 86 + 5 * rowGap;
+      ctx.fillText("提示方式", box.x + 24, modeY);
+      (["interactive", "auto", "direct"] as const).forEach((mode, i) => {
+        const option = addHit(`hintMode:${mode}`, { x: box.x + 20, y: modeY + 24 + i * 55, w: box.w - 40, h: 50 });
+        fillRound(ctx, option, settings.hintMode === mode ? theme.paperDeep : theme.surface, 10);
+        ctx.fillStyle = settings.hintMode === mode ? theme.accent : theme.ink;
+        ctx.font = "700 13px sans-serif";
+        ctx.fillText(`${settings.hintMode === mode ? "● " : "○ "}${mode === "interactive" ? "交互式推理教学（推荐）" : mode === "auto" ? "自动播放动画" : "直接给答案"}`, option.x + 10, option.y + 7);
+        ctx.fillStyle = theme.muted;
+        ctx.font = "11px sans-serif";
+        ctx.fillText(mode === "interactive" ? "一步一步查看推理过程" : mode === "auto" ? "自动演示完整推理过程" : "跳过推理，直接显示下一步", option.x + 26, option.y + 28);
       });
       const wipe = addHit("wipe", { x: box.x + 24, y: box.y + box.h - 88, w: box.w - 48, h: 36 });
       ctx.textAlign = "center";
@@ -1457,6 +1509,7 @@ export function createApp(env: Env) {
     if (id === "close" || id === "gotIt") {
       modal = null;
       hint = null;
+      hintSession = null;
       return;
     }
     if (id === "settings") modal = "settings";
@@ -1477,17 +1530,21 @@ export function createApp(env: Env) {
       hint = peekHint(play);
       if (hint) {
         noteHintShown(play);
+        hintSession = new HintSession(presentHint(play.level, hint, settings.hintMode).steps.length, settings.hintMode, motionTime);
         modal = "hint";
       }
     }
     if (id === "restart") modal = "restart";
     if (id === "rules") modal = "rules";
-    if (id === "applyHint" && play && hint) {
+    if (id === "hintNext") hintSession?.next(motionTime, settings.animationsEnabled);
+    if (id === "hintPrevious") hintSession?.previous(motionTime);
+    if (id === "applyHint" && play && hint && hintSession?.frame(motionTime, settings.animationsEnabled, hint.targets.length).complete) {
       const before = play.board.slice();
       if (applyHint(play, hint)) recordBoardMotion(before);
       if (play.completed) onWin();
       else modal = null;
       hint = null;
+      hintSession = null;
     }
     if (id === "next") void nextInfinite();
     if (id === "resultHome") {
@@ -1521,10 +1578,14 @@ export function createApp(env: Env) {
       modal = null;
     }
     if (id.startsWith("set:")) {
-      const key = id.slice(4) as keyof Settings;
+      const key = id.slice(4) as Exclude<keyof Settings, "hintMode">;
       settings[key] = !settings[key];
       if (play) play.settings = settings;
       if (key === "musicEnabled") sound.setMusic(settings.musicEnabled && visible);
+    }
+    if (id === "hintMode:interactive" || id === "hintMode:auto" || id === "hintMode:direct") {
+      settings.hintMode = id === "hintMode:direct" ? "direct" : id === "hintMode:auto" ? "auto" : "interactive";
+      if (play) play.settings = settings;
     }
     persist();
   }

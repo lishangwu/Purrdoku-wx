@@ -1,3 +1,4 @@
+import { CAT_SPRITE_PATHS } from "../game/cat-variants";
 import { fillRound, roundBox, theme, type Rect } from "./theme";
 
 export function paintPaper(
@@ -139,12 +140,13 @@ export function drawMiniCat(
   size: number,
   frame = 0,
   scale = 1,
+  catVariant = 0,
 ): void {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.scale(scale, scale);
   ctx.translate(-cx, -cy);
-  if (drawBlinkCat(ctx, cx, cy, size, frame)) {
+  if (drawBlinkCat(ctx, cx, cy, size, frame, catVariant)) {
     ctx.restore();
     return;
   }
@@ -180,8 +182,8 @@ export function drawMiniCat(
   ctx.restore();
 }
 
-/** 2×2 精灵图，由棋盘时间轴选择帧。 */
-const BLINK_COLS = 2;
+/** 4×2 精灵图，由棋盘时间轴选择帧。 */
+const BLINK_COLS = 4;
 const BLINK_ROWS = 2;
 
 function drawBlinkCat(
@@ -190,7 +192,9 @@ function drawBlinkCat(
   cy: number,
   size: number,
   frame: number,
+  catVariant: number,
 ): boolean {
+  const blinkImg = blinkImages[catVariant];
   if (!blinkImg || blinkImg.width <= 0) return false;
   const fw = blinkImg.width / BLINK_COLS;
   const fh = blinkImg.height / BLINK_ROWS;
@@ -386,7 +390,7 @@ export function drawHeroPortrait(
 
 let heroCatImg: CanvasImageSourceLike | null = null;
 let heroCatTried = false;
-let blinkImg: CanvasImageSourceLike | null = null;
+const blinkImages: (CanvasImageSourceLike | null)[] = CAT_SPRITE_PATHS.map(() => null);
 let blinkTried = false;
 
 function makeImage(canvas: HTMLCanvasElementLike): CanvasImageSourceLike | null {
@@ -416,12 +420,14 @@ export function loadHeroCat(canvas: HTMLCanvasElementLike): void {
   });
 }
 
-/** 加载棋盘猫眨眼精灵图（4 帧） */
+/** 加载棋盘猫精灵图（8 帧） */
 export function loadCatBlink(canvas: HTMLCanvasElementLike): void {
-  if (blinkTried || blinkImg) return;
+  if (blinkTried) return;
   blinkTried = true;
-  loadPackImage(canvas, "assets/cats/cat-blink.png", (img) => {
-    blinkImg = img;
+  CAT_SPRITE_PATHS.forEach((path, variant) => {
+    loadPackImage(canvas, path, (img) => {
+      blinkImages[variant] = img;
+    });
   });
 }
 

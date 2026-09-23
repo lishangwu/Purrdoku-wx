@@ -45,6 +45,7 @@ export interface Snapshot {
 export type HintKind = "place" | "exclude" | "correct" | "reveal";
 
 export interface HintPlan {
+  rule?: "B1" | "B3" | "B4" | "C1";
   kind: HintKind;
   title: string;
   reason: string;
@@ -55,6 +56,7 @@ export interface HintPlan {
 }
 
 export interface Settings {
+  hintMode: "interactive" | "auto" | "direct";
   autoMarkEnabled: boolean;
   soundEnabled: boolean;
   musicEnabled: boolean;
@@ -63,6 +65,7 @@ export interface Settings {
 }
 
 export const defaultSettings = (): Settings => ({
+  hintMode: "interactive",
   autoMarkEnabled: true,
   soundEnabled: true,
   musicEnabled: false,

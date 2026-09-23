@@ -42,7 +42,7 @@ async function main() {
     "game.js",
     "game.json",
     "images/cat-1024.png",
-    "assets/cats/cat-blink.png",
+    ...fs.readdirSync(path.join(root, "assets/cats8")).filter((file) => file.endsWith(".png")).map((file) => `assets/cats8/${file}`),
   ];
   const runtimeBytes = runtimeFiles.reduce(
     (total, file) => total + fs.statSync(path.join(root, file)).size,
@@ -52,7 +52,7 @@ async function main() {
   if (/data:image\/(?:png|jpe?g)/.test(bundle)) {
     throw new Error("game.js 不应内嵌运行时图片；请使用小游戏包内路径");
   }
-  console.log(`运行时主包文件 ${(runtimeBytes / 1024).toFixed(1)} KB（含两张图片）`);
+  console.log(`运行时主包文件 ${(runtimeBytes / 1024).toFixed(1)} KB（含运行时图片）`);
 }
 
 main().catch((e) => {
