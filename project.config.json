@@ -34,6 +34,14 @@
   "packOptions": {
     "ignore": [
       {
+        "value": "assets/cats",
+        "type": "folder"
+      },
+      {
+        "value": ".md",
+        "type": "suffix"
+      },
+      {
         "value": "src",
         "type": "folder"
       },
