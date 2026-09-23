@@ -1,6 +1,4 @@
 import { fillRound, roundBox, theme, type Rect } from "./theme";
-import { HERO_CAT_SRC } from "./hero-cat";
-import { CAT_BLINK_SRC } from "./cat-blink";
 
 export function paintPaper(
   ctx: CanvasRenderingContext2DLike,
@@ -397,31 +395,23 @@ function makeImage(canvas: HTMLCanvasElementLike): CanvasImageSourceLike | null 
   return null;
 }
 
-function loadDataUrl(
+function loadPackImage(
   canvas: HTMLCanvasElementLike,
   src: string,
-  fileFallback: string,
   onReady: (img: CanvasImageSourceLike) => void,
 ): void {
   const img = makeImage(canvas);
   if (!img) return;
-  const accept = () => onReady(img);
-  img.onload = accept;
-  img.onerror = () => {
-    const fallback = makeImage(canvas);
-    if (!fallback) return;
-    fallback.onload = () => onReady(fallback);
-    fallback.src = fileFallback;
-  };
+  img.onload = () => onReady(img);
   img.src = src;
-  if (img.width > 0) accept();
+  if (img.width > 0) onReady(img);
 }
 
-/** 加载 H5 首页猫图（data URL，不依赖本地路径） */
+/** 从小游戏包加载首页猫图，避免同时携带 data URL 和原文件。 */
 export function loadHeroCat(canvas: HTMLCanvasElementLike): void {
   if (heroCatTried || heroCatImg) return;
   heroCatTried = true;
-  loadDataUrl(canvas, HERO_CAT_SRC, "/images/cat-1024.png", (img) => {
+  loadPackImage(canvas, "images/cat-1024.png", (img) => {
     heroCatImg = img;
   });
 }
@@ -430,7 +420,7 @@ export function loadHeroCat(canvas: HTMLCanvasElementLike): void {
 export function loadCatBlink(canvas: HTMLCanvasElementLike): void {
   if (blinkTried || blinkImg) return;
   blinkTried = true;
-  loadDataUrl(canvas, CAT_BLINK_SRC, "/assets/cats/cat-blink.png", (img) => {
+  loadPackImage(canvas, "assets/cats/cat-blink.png", (img) => {
     blinkImg = img;
   });
 }

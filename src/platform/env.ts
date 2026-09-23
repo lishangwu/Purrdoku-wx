@@ -8,6 +8,24 @@ export interface Env {
   insetBottom: number;
 }
 
+export interface WindowMetrics {
+  width: number;
+  height: number;
+  pixelRatio: number;
+  insetTop: number;
+  insetBottom: number;
+}
+
+export function windowMetrics(info: WxSystemInfo): WindowMetrics {
+  return {
+    width: Math.max(1, info.windowWidth),
+    height: Math.max(1, info.windowHeight),
+    pixelRatio: Math.max(1, info.pixelRatio || 1),
+    insetTop: Math.max(0, info.safeArea?.top ?? info.statusBarHeight ?? 24),
+    insetBottom: Math.max(0, info.windowHeight - (info.safeArea?.bottom ?? info.windowHeight)),
+  };
+}
+
 export function createEnv(): Env {
   const canvas = wx.createCanvas();
   const env: Env = {
@@ -25,14 +43,12 @@ export function createEnv(): Env {
 
 export function fit(env: Env): void {
   const info = wx.getWindowInfo?.() ?? wx.getSystemInfoSync();
-  env.width = info.windowWidth;
-  env.height = info.windowHeight;
-  env.pixelRatio = info.pixelRatio || 1;
-  env.insetTop = info.safeArea?.top || info.statusBarHeight || 24;
-  env.insetBottom = Math.max(
-    0,
-    info.windowHeight - (info.safeArea?.bottom || info.windowHeight),
-  );
+  const metrics = windowMetrics(info);
+  env.width = metrics.width;
+  env.height = metrics.height;
+  env.pixelRatio = metrics.pixelRatio;
+  env.insetTop = metrics.insetTop;
+  env.insetBottom = metrics.insetBottom;
   env.canvas.width = Math.round(env.width * env.pixelRatio);
   env.canvas.height = Math.round(env.height * env.pixelRatio);
   env.ctx.scale(env.pixelRatio, env.pixelRatio);

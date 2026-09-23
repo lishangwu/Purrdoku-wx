@@ -72,6 +72,7 @@ import {
   type BoardMotionKind,
 } from "./board-motion";
 import type { CellState } from "../types";
+import { shouldRenderFrame } from "./frame-pacer";
 
 type Scene = "home" | "play";
 type Modal =
@@ -159,6 +160,7 @@ export function createApp(env: Env) {
   if (play) ensureCatFaces(play);
   let hint: HintPlan | null = null;
   let lastTs = 0;
+  let lastDrawTs = 0;
   let visible = true;
   let focus = 0;
   let hits: PressTarget[] = [];
@@ -1644,7 +1646,10 @@ export function createApp(env: Env) {
     if (visible && !modal) visualTime += dt * 1000;
     const counting = visible && scene === "play" && !!play && !play.completed && !modal;
     if (play) tickPlay(play, dt, counting);
-    draw();
+    if (shouldRenderFrame(ts, lastDrawTs)) {
+      lastDrawTs = ts;
+      draw();
+    }
     requestAnimationFrame(loop);
   }
 
@@ -1675,6 +1680,7 @@ export function createApp(env: Env) {
     visible = true;
     sound.setMusic(settings.musicEnabled);
     lastTs = 0;
+    lastDrawTs = 0;
     fit(env);
   });
   wx.onWindowResize?.(() => fit(env));

@@ -18,9 +18,6 @@ async function main() {
     charset: "utf8",
     minify: true,
     loader: {
-      ".png": "dataurl",
-      ".jpg": "dataurl",
-      ".jpeg": "dataurl",
       ".json": "json",
     },
     metafile: true,
@@ -41,6 +38,21 @@ async function main() {
   }
   const gameJs = fs.statSync(path.join(root, "game.js")).size;
   console.log(`game.js ${(gameJs / 1024).toFixed(1)} KB`);
+  const runtimeFiles = [
+    "game.js",
+    "game.json",
+    "images/cat-1024.png",
+    "assets/cats/cat-blink.png",
+  ];
+  const runtimeBytes = runtimeFiles.reduce(
+    (total, file) => total + fs.statSync(path.join(root, file)).size,
+    0,
+  );
+  const bundle = fs.readFileSync(path.join(root, "game.js"), "utf8");
+  if (/data:image\/(?:png|jpe?g)/.test(bundle)) {
+    throw new Error("game.js 不应内嵌运行时图片；请使用小游戏包内路径");
+  }
+  console.log(`运行时主包文件 ${(runtimeBytes / 1024).toFixed(1)} KB（含两张图片）`);
 }
 
 main().catch((e) => {

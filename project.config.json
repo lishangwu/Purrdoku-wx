@@ -50,6 +50,18 @@
         "type": "folder"
       },
       {
+        "value": "reference_image",
+        "type": "folder"
+      },
+      {
+        "value": ".superpowers",
+        "type": "folder"
+      },
+      {
+        "value": ".worktrees",
+        "type": "folder"
+      },
+      {
         "value": "node_modules",
         "type": "folder"
       },
@@ -67,6 +79,26 @@
       },
       {
         "value": "README.md",
+        "type": "file"
+      },
+      {
+        "value": "Prompt.md",
+        "type": "file"
+      },
+      {
+        "value": "codex.md",
+        "type": "file"
+      },
+      {
+        "value": "ani.md",
+        "type": "file"
+      },
+      {
+        "value": ".gitignore",
+        "type": "file"
+      },
+      {
+        "value": "project.private.config.json",
         "type": "file"
       },
       {
