@@ -2,7 +2,7 @@ import type { CellState, HintPlan, Level, Settings, Snapshot } from "../types";
 import {
   boardKey,
   emptyBoard,
-  markLine,
+  markPath,
   placeCat,
   starsFor,
   toggleMark,
@@ -121,8 +121,12 @@ export function placeOn(play: PlayState, index: number): boolean {
 }
 
 export function dragMark(play: PlayState, from: number, to: number): boolean {
+  return dragMarkPath(play, [from, to]);
+}
+
+export function dragMarkPath(play: PlayState, path: number[]): boolean {
   if (!editable(play)) return false;
-  const next = markLine(play.board, from, to, play.level.size);
+  const next = markPath(play.board, path, play.level.size);
   if (next.every((cell, i) => cell === play.board[i])) return false;
   pushHistory(play);
   play.board = next;

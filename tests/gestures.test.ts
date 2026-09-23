@@ -68,9 +68,20 @@ describe("gestures", () => {
     g.start(0, 1);
     g.move(3, 1);
     g.end(1);
-    assert.deepEqual(actions.at(-1), { type: "drag", from: 0, to: 3 });
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 3] });
     clock.flush(TAP_MS);
     assert.ok(actions.every((a) => a.type !== "toggle"));
+  });
+
+  it("keeps each turn in a drag path", () => {
+    const actions: GestureAction[] = [];
+    const clock = mockClock();
+    const g = new GestureMachine(clock, (a) => actions.push(a));
+    g.start(0, 1);
+    g.move(2, 1);
+    g.move(8, 1);
+    g.end(1);
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 2, 8] });
   });
 
   it("ignores move and end events from another touch", () => {

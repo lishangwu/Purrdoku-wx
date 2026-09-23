@@ -1,12 +1,12 @@
 import { generatePuzzle, type GenerateRequest } from "../engine/generate";
 import { planLevel, type PaceHistory } from "../engine/pacer";
 import { hashSeed, rngFrom } from "../engine/rng";
-import { markLine, starsFor } from "../engine/board";
+import { markPath, starsFor } from "../engine/board";
 import { staticLevels } from "../data/static";
 import {
   applyHint,
   createPlay,
-  dragMark,
+  dragMarkPath,
   ensureCatFaces,
   noteHintShown,
   peekHint,
@@ -142,7 +142,8 @@ export function createApp(env: Env) {
   let uiPress: PressState | null = null;
   let activeTouchId: number | null = null;
   let boardRect: Rect = { x: 0, y: 0, w: 1, h: 1 };
-  let previewDrag: { from: number; to: number } | null = null;
+  let previewPath: number[] | null = null;
+  let pressedCell: number | null = null;
   let toast = "";
 
   const gestures = new GestureMachine(
@@ -154,18 +155,24 @@ export function createApp(env: Env) {
     },
     (action) => {
       if (!play || modal) return;
-      if (action.type === "toggle") toggleCell(play, action.index);
+      let changed = false;
+      if (action.type === "toggle") changed = toggleCell(play, action.index);
       if (action.type === "place") {
-        placeOn(play, action.index);
-        if (play.completed) onWin();
-        buzz();
+        changed = placeOn(play, action.index);
+        if (changed) {
+          if (play.completed) onWin();
+          buzz();
+        }
       }
       if (action.type === "drag") {
-        dragMark(play, action.from, action.to);
-        previewDrag = null;
+        changed = dragMarkPath(play, action.path);
+        previewPath = null;
       }
-      if (action.type === "preview") previewDrag = { from: action.from, to: action.to };
-      persist();
+      if (action.type === "preview") {
+        previewPath = action.path;
+        pressedCell = null;
+      }
+      if (changed) persist();
     },
   );
 
@@ -733,8 +740,8 @@ export function createApp(env: Env) {
 
     const pitch = board / n;
     const gap = Math.max(2.2, pitch * 0.08);
-    const shown = previewDrag
-      ? markLine(play.board, previewDrag.from, previewDrag.to, n)
+    const shown = previewPath
+      ? markPath(play.board, previewPath, n)
       : play.board;
     const showHint = Boolean(hint);
     for (let r = 0; r < n; r++) {
@@ -750,6 +757,9 @@ export function createApp(env: Env) {
           theme.regions[play.level.regions[r]![c]! % theme.regions.length]!,
           rr,
         );
+        if (pressedCell === i) {
+          fillRound(ctx, { x, y, w: s, h: s }, "rgba(255,255,255,0.12)", rr);
+        }
         if (showHint && hint!.targets.includes(i)) {
           strokeRound(ctx, { x, y, w: s, h: s }, "#ffffff", rr, 3.2);
         }
@@ -1260,7 +1270,8 @@ export function createApp(env: Env) {
       if (kind === "cancel") {
         gestures.cancel(id);
         if (uiPress?.touchId === id) uiPress = null;
-        previewDrag = null;
+        previewPath = null;
+        pressedCell = null;
         return;
       }
       if (modal) {
@@ -1285,9 +1296,16 @@ export function createApp(env: Env) {
       }
       const cell = cellAt(x, y);
       if (cell !== null && play && !play.completed) {
-        if (kind === "start") gestures.start(cell, id);
+        if (kind === "start") {
+          pressedCell = cell;
+          gestures.start(cell, id);
+        }
         if (kind === "move") gestures.move(cell, id);
-        if (kind === "end") gestures.end(id);
+        if (kind === "end") {
+          gestures.move(cell, id);
+          gestures.end(id);
+          pressedCell = null;
+        }
         focus = cell;
         return;
       }
@@ -1298,7 +1316,8 @@ export function createApp(env: Env) {
       if (kind === "move") uiPress = keepPress(uiPress, hits, x, y, id);
       if (kind === "end") {
         gestures.cancel(id);
-        previewDrag = null;
+        previewPath = null;
+        pressedCell = null;
         const target = releasePress(uiPress, hits, x, y, id);
         if (uiPress?.touchId === id) uiPress = null;
         if (target) tap(target);
@@ -1332,6 +1351,12 @@ export function createApp(env: Env) {
       else drawPlay(ctx);
       if (modal) hits = [];
       drawModal(ctx);
+      if (uiPress) {
+        const pressed = [...hits].reverse().find((target) => target.id === uiPress!.id);
+        if (pressed) {
+          fillRound(ctx, pressed.rect, "rgba(41,59,82,0.07)", Math.min(16, pressed.rect.h / 2));
+        }
+      }
     } catch (err) {
       ctx.fillStyle = theme.seal;
       ctx.font = "14px sans-serif";
@@ -1367,7 +1392,8 @@ export function createApp(env: Env) {
     gestures.cancel();
     uiPress = null;
     activeTouchId = null;
-    previewDrag = null;
+    previewPath = null;
+    pressedCell = null;
     persist();
   });
   wx.onShow(() => {

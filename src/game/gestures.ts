@@ -3,8 +3,8 @@ export const TAP_MS = 220;
 export type GestureAction =
   | { type: "toggle"; index: number }
   | { type: "place"; index: number }
-  | { type: "drag"; from: number; to: number }
-  | { type: "preview"; from: number; to: number };
+  | { type: "drag"; path: number[] }
+  | { type: "preview"; path: number[] };
 
 export interface GestureClock {
   later(ms: number, fn: () => void): () => void;
@@ -14,6 +14,7 @@ export class GestureMachine {
   private touchId: number | null = null;
   private startCell = -1;
   private lastCell = -1;
+  private path: number[] = [];
   private dragging = false;
   private secondTap = false;
   private awaitingSecond = false;
@@ -30,6 +31,7 @@ export class GestureMachine {
     this.touchId = touchId;
     this.startCell = cell;
     this.lastCell = cell;
+    this.path = [cell];
     this.dragging = false;
     if (this.awaitingSecond && this.pendingCell === cell) {
       this.clearTimer();
@@ -48,15 +50,17 @@ export class GestureMachine {
     this.clearTimer();
     this.awaitingSecond = false;
     this.lastCell = cell;
-    this.emit({ type: "preview", from: this.startCell, to: cell });
+    this.path.push(cell);
+    this.emit({ type: "preview", path: this.path.slice() });
   }
 
   end(touchId: number): void {
     if (this.touchId !== touchId) return;
     this.touchId = null;
     if (this.dragging) {
-      this.emit({ type: "drag", from: this.startCell, to: this.lastCell });
+      this.emit({ type: "drag", path: this.path.slice() });
       this.dragging = false;
+      this.path = [];
       return;
     }
     if (this.secondTap) {
@@ -75,6 +79,7 @@ export class GestureMachine {
     this.dragging = false;
     this.secondTap = false;
     this.awaitingSecond = false;
+    this.path = [];
     this.clearTimer();
   }
 

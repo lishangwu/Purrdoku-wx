@@ -1,7 +1,7 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
 import { miniLevel } from "./helpers";
-import { applyHint, createPlay, placeOn, restart, toggleCell, undo } from "../src/game/play";
+import { applyHint, createPlay, dragMarkPath, placeOn, restart, toggleCell, undo } from "../src/game/play";
 import { defaultSettings } from "../src/types";
 import { explainedHint } from "../src/engine/hint";
 import { idx } from "./helpers";
@@ -49,5 +49,15 @@ describe("play session", () => {
     applyHint(play, plan);
     assert.equal(play.board[idx(4, 0, 1)], "empty");
     assert.equal(play.mistakes, 0);
+  });
+
+  it("keeps a turning drag as one undo step", () => {
+    const play = createPlay(miniLevel());
+    dragMarkPath(play, [0, 2, 10]);
+    assert.equal(play.history.length, 1);
+    assert.equal(play.board[1], "markedX");
+    assert.equal(play.board[6], "markedX");
+    undo(play);
+    assert.ok(play.board.every((cell) => cell === "empty"));
   });
 });

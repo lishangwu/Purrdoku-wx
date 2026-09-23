@@ -81,6 +81,19 @@ export function markLine(
   return next;
 }
 
+export function markPath(
+  board: CellState[],
+  path: number[],
+  size: number,
+): CellState[] {
+  if (path.length < 2) return board.slice();
+  let next = board;
+  for (let i = 1; i < path.length; i++) {
+    next = markLine(next, path[i - 1], path[i], size);
+  }
+  return next;
+}
+
 export function won(level: Level, board: CellState[]): boolean {
   const n = level.size;
   return level.solution.every((p) => board[p.row * n + p.col] === "cat");
