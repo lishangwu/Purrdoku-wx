@@ -62,6 +62,13 @@ import {
   type PressState,
   type PressTarget,
 } from "./input";
+import {
+  catIdleFrame,
+  regionFlashAmount,
+  sampleBoardMotion,
+  type BoardMotionKind,
+} from "./board-motion";
+import type { CellState } from "../types";
 
 type Scene = "home" | "play";
 type Modal =
@@ -161,8 +168,42 @@ export function createApp(env: Env) {
   let preparedPuzzle: PreparedPuzzle | null = null;
   let preparingPuzzle = false;
   let generationError = "";
+  let visualTime = 0;
+  let motionTime = 0;
+  const boardMotions = new Map<number, { kind: BoardMotionKind; startedAt: number }>();
+  const regionFlashes = new Map<number, number>();
 
   const puzzleQueue = new PuzzleQueue<PreparedPuzzle>();
+
+  function clearBoardMotion(): void {
+    boardMotions.clear();
+    regionFlashes.clear();
+  }
+
+  function recordBoardMotion(
+    before: CellState[],
+    attemptedIndex: number | null = null,
+    mistakesBefore = play?.mistakes ?? 0,
+  ): void {
+    if (!play || !settings.animationsEnabled) return;
+    for (let index = 0; index < play.board.length; index++) {
+      const previous = before[index];
+      const next = play.board[index];
+      let kind: BoardMotionKind | null = null;
+      if (previous === "markedX" && next === "empty") kind = "mark-out";
+      else if (previous !== "markedX" && next === "markedX") kind = "mark-in";
+      else if (previous !== "cat" && next === "cat") {
+        kind = "cat-in";
+        const row = Math.floor(index / play.level.size);
+        const col = index % play.level.size;
+        regionFlashes.set(play.level.regions[row]![col]!, motionTime);
+      } else if (previous !== "wrongX" && next === "wrongX") kind = "wrong";
+      if (kind) boardMotions.set(index, { kind, startedAt: motionTime });
+    }
+    if (attemptedIndex !== null && play.mistakes > mistakesBefore) {
+      boardMotions.set(attemptedIndex, { kind: "wrong", startedAt: motionTime });
+    }
+  }
 
   const gestures = new GestureMachine(
     {
@@ -173,6 +214,8 @@ export function createApp(env: Env) {
     },
     (action) => {
       if (!play || modal) return;
+      const before = play.board.slice();
+      const mistakesBefore = play.mistakes;
       let changed = false;
       if (action.type === "toggle") changed = toggleCell(play, action.index);
       if (action.type === "place") {
@@ -189,6 +232,9 @@ export function createApp(env: Env) {
       if (action.type === "preview") {
         previewPath = action.path;
         pressedCell = null;
+      }
+      if (changed) {
+        recordBoardMotion(before, action.type === "place" ? action.index : null, mistakesBefore);
       }
       if (changed) persist();
     },
@@ -333,6 +379,7 @@ export function createApp(env: Env) {
       ),
       settings,
     );
+    clearBoardMotion();
     persist();
   }
 
@@ -351,6 +398,7 @@ export function createApp(env: Env) {
     }
     const level = staticLevels[dailyIndex(localDate(), staticLevels.length)];
     play = createPlay({ ...level, id: key, difficulty: "easy" }, settings);
+    clearBoardMotion();
     modal = null;
     persist();
   }
@@ -368,6 +416,7 @@ export function createApp(env: Env) {
     infinite.sizeCounts[prepared.level.size] =
       (infinite.sizeCounts[prepared.level.size] ?? 0) + 1;
     play = createPlay(prepared.level, settings);
+    clearBoardMotion();
     preparedPuzzle = null;
     puzzleQueue.clear();
     modal = null;
@@ -816,7 +865,7 @@ export function createApp(env: Env) {
     );
 
     const pitch = board / n;
-    const gap = Math.max(2.2, pitch * 0.08);
+    const gap = Math.min(3, Math.max(2, pitch * 0.055));
     const shown = previewPath
       ? markPath(play.board, previewPath, n)
       : play.board;
@@ -827,13 +876,21 @@ export function createApp(env: Env) {
         const x = boardRect.x + c * pitch + gap / 2;
         const y = boardRect.y + r * pitch + gap / 2;
         const s = pitch - gap;
-        const rr = Math.min(12, s * 0.28);
+        const rr = Math.min(5, Math.max(3, s * 0.09));
+        const region = play.level.regions[r]![c]!;
         fillRound(
           ctx,
           { x, y, w: s, h: s },
-          theme.regions[play.level.regions[r]![c]! % theme.regions.length]!,
+          theme.regions[region % theme.regions.length]!,
           rr,
         );
+        const flashStartedAt = regionFlashes.get(region);
+        if (flashStartedAt !== undefined && settings.animationsEnabled) {
+          const flash = regionFlashAmount(motionTime - flashStartedAt);
+          if (flash > 0) {
+            fillRound(ctx, { x, y, w: s, h: s }, `rgba(255,255,255,${flash})`, rr);
+          } else regionFlashes.delete(region);
+        }
         if (pressedCell === i) {
           fillRound(ctx, { x, y, w: s, h: s }, "rgba(255,255,255,0.12)", rr);
         }
@@ -843,10 +900,33 @@ export function createApp(env: Env) {
         const cell = shown[i];
         if (cell === "cat") {
           ensureCatFaces(play);
-          drawMiniCat(ctx, x + s / 2, y + s / 2, s, play.catFaces[i] ?? 0);
+          const motion = boardMotions.get(i);
+          const sample = motion?.kind === "cat-in" && settings.animationsEnabled
+            ? sampleBoardMotion(motion.kind, motionTime - motion.startedAt)
+            : null;
+          if (sample && !sample.alive) boardMotions.delete(i);
+          drawMiniCat(
+            ctx,
+            x + s / 2,
+            y + s / 2,
+            s,
+            catIdleFrame(visualTime, i, settings.animationsEnabled),
+            sample?.scale ?? 1,
+          );
         }
-        if (cell === "markedX") drawMark(ctx, x + s / 2, y + s / 2, s, false);
-        if (cell === "wrongX") drawMark(ctx, x + s / 2, y + s / 2, s, true);
+        const motion = boardMotions.get(i);
+        const sample = motion && settings.animationsEnabled
+          ? sampleBoardMotion(motion.kind, motionTime - motion.startedAt)
+          : null;
+        if (sample && !sample.alive) boardMotions.delete(i);
+        if (cell === "markedX") {
+          drawMark(ctx, x + s / 2, y + s / 2, s, false, sample?.opacity, sample?.scale);
+        } else if (cell === "empty" && motion?.kind === "mark-out" && sample?.alive) {
+          drawMark(ctx, x + s / 2, y + s / 2, s, false, sample.opacity, sample.scale);
+        }
+        if (cell === "wrongX") {
+          drawMark(ctx, x + s / 2, y + s / 2, s, true, 1, 1, sample?.shakeX ?? 0);
+        }
         if (showHint && hint!.sources.includes(i)) {
           const dx = x + s / 2;
           const dy = y + s * 0.22;
@@ -1055,7 +1135,7 @@ export function createApp(env: Env) {
         const cellState = play.board[i];
         if (cellState === "cat") {
           ensureCatFaces(play);
-          drawMiniCat(ctx, x + s / 2, yy + s / 2, s, play.catFaces[i] ?? 0);
+          drawMiniCat(ctx, x + s / 2, yy + s / 2, s, 0);
         }
         if (cellState === "markedX") drawMark(ctx, x + s / 2, yy + s / 2, s, false);
         if (cellState === "wrongX") drawMark(ctx, x + s / 2, yy + s / 2, s, true);
@@ -1300,7 +1380,10 @@ export function createApp(env: Env) {
       persist();
     }
     if (id === "more") modal = "settings";
-    if (id === "undo" && play) undo(play);
+    if (id === "undo" && play) {
+      const before = play.board.slice();
+      if (undo(play)) recordBoardMotion(before);
+    }
     if (id === "hint" && play && !play.completed) {
       hint = peekHint(play);
       if (hint) {
@@ -1311,7 +1394,8 @@ export function createApp(env: Env) {
     if (id === "restart") modal = "restart";
     if (id === "rules") modal = "rules";
     if (id === "applyHint" && play && hint) {
-      applyHint(play, hint);
+      const before = play.board.slice();
+      if (applyHint(play, hint)) recordBoardMotion(before);
       if (play.completed) onWin();
       else modal = null;
       hint = null;
@@ -1319,6 +1403,7 @@ export function createApp(env: Env) {
     if (id === "next") void nextInfinite();
     if (id === "doRestart" && play) {
       restart(play, mode);
+      clearBoardMotion();
       modal = null;
     }
     if (id === "wipe") modal = "clear";
@@ -1425,11 +1510,15 @@ export function createApp(env: Env) {
     if (code === "ArrowRight") focus = Math.min(n * n - 1, focus + 1);
     if (code === "ArrowUp") focus = Math.max(0, focus - n);
     if (code === "ArrowDown") focus = Math.min(n * n - 1, focus + n);
-    if (code === "Space") toggleCell(play, focus);
+    const before = play.board.slice();
+    const mistakesBefore = play.mistakes;
+    let changed = false;
+    if (code === "Space") changed = toggleCell(play, focus);
     if (code === "Enter") {
-      placeOn(play, focus);
+      changed = placeOn(play, focus);
       if (play.completed) onWin();
     }
+    if (changed) recordBoardMotion(before, code === "Enter" ? focus : null, mistakesBefore);
     persist();
   }
 
@@ -1459,6 +1548,8 @@ export function createApp(env: Env) {
   function loop(ts: number): void {
     const dt = lastTs ? Math.min(0.2, (ts - lastTs) / 1000) : 0;
     lastTs = ts;
+    if (visible) motionTime += dt * 1000;
+    if (visible && !modal) visualTime += dt * 1000;
     const counting = visible && scene === "play" && !!play && !play.completed && !modal;
     if (play) tickPlay(play, dt, counting);
     draw();

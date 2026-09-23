@@ -113,17 +113,25 @@ export function drawMark(
   cy: number,
   size: number,
   wrong: boolean,
+  opacity = 1,
+  scale = 1,
+  shakeX = 0,
 ): void {
+  ctx.save();
+  ctx.globalAlpha = opacity;
+  ctx.translate(cx + shakeX, cy);
+  ctx.scale(scale, scale);
   ctx.strokeStyle = wrong ? theme.wrong : "#ffffff";
-  ctx.lineWidth = Math.max(2, size * 0.12);
+  ctx.lineWidth = Math.max(2, Math.min(4, size * 0.075));
   ctx.lineCap = "round";
-  const r = size * 0.22;
+  const r = size * 0.245;
   ctx.beginPath();
-  ctx.moveTo(cx - r, cy - r);
-  ctx.lineTo(cx + r, cy + r);
-  ctx.moveTo(cx + r, cy - r);
-  ctx.lineTo(cx - r, cy + r);
+  ctx.moveTo(-r, -r);
+  ctx.lineTo(r, r);
+  ctx.moveTo(r, -r);
+  ctx.lineTo(-r, r);
   ctx.stroke();
+  ctx.restore();
 }
 
 export function drawMiniCat(
@@ -131,9 +139,17 @@ export function drawMiniCat(
   cx: number,
   cy: number,
   size: number,
-  _face = 0,
+  frame = 0,
+  scale = 1,
 ): void {
-  if (drawBlinkCat(ctx, cx, cy, size)) return;
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+  ctx.translate(-cx, -cy);
+  if (drawBlinkCat(ctx, cx, cy, size, frame)) {
+    ctx.restore();
+    return;
+  }
   const s = size / 70;
   ctx.save();
   ctx.translate(cx, cy + size * 0.08);
@@ -163,26 +179,21 @@ export function drawMiniCat(
   ctx.arc(5, -1, 1.6, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
+  ctx.restore();
 }
 
-/** 2×2 精灵图，10 FPS 循环眨眼 */
+/** 2×2 精灵图，由棋盘时间轴选择帧。 */
 const BLINK_COLS = 2;
 const BLINK_ROWS = 2;
-const BLINK_FRAMES = BLINK_COLS * BLINK_ROWS;
-const BLINK_FPS = 6;
-
-function blinkFrameIndex(): number {
-  return Math.floor(Date.now() / (1000 / BLINK_FPS)) % BLINK_FRAMES;
-}
 
 function drawBlinkCat(
   ctx: CanvasRenderingContext2DLike,
   cx: number,
   cy: number,
   size: number,
+  frame: number,
 ): boolean {
   if (!blinkImg || blinkImg.width <= 0) return false;
-  const frame = blinkFrameIndex();
   const fw = blinkImg.width / BLINK_COLS;
   const fh = blinkImg.height / BLINK_ROWS;
   const col = frame % BLINK_COLS;
