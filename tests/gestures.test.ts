@@ -65,23 +65,46 @@ describe("gestures", () => {
     const actions: GestureAction[] = [];
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
-    g.start(0, 1);
-    g.move(3, 1);
+    g.start(0, 1, 0, 0, 4);
+    g.move(3, 1, 30, 1);
     g.end(1);
-    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 3] });
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 1, 2, 3] });
     clock.flush(TAP_MS);
     assert.ok(actions.every((a) => a.type !== "toggle"));
   });
 
-  it("keeps each turn in a drag path", () => {
+  it("locks the first direction despite perpendicular finger drift", () => {
     const actions: GestureAction[] = [];
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
-    g.start(0, 1);
-    g.move(2, 1);
-    g.move(8, 1);
+    g.start(0, 1, 0, 0, 3);
+    g.move(2, 1, 20, 1);
+    g.move(8, 1, 28, 30);
     g.end(1);
-    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 2, 8] });
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 1, 2] });
+  });
+
+  it("waits for the movement threshold before becoming a drag", () => {
+    const actions: GestureAction[] = [];
+    const clock = mockClock();
+    const g = new GestureMachine(clock, (a) => actions.push(a));
+    g.start(4, 1, 20, 20, 3);
+    g.move(5, 1, 25, 22);
+    g.end(1);
+    clock.flush(TAP_MS);
+    assert.deepEqual(actions, [{ type: "toggle", index: 4 }]);
+  });
+
+  it("fills skipped cells on a fast vertical swipe and visits each once", () => {
+    const actions: GestureAction[] = [];
+    const clock = mockClock();
+    const g = new GestureMachine(clock, (a) => actions.push(a));
+    g.start(1, 1, 10, 0, 4);
+    g.move(13, 1, 11, 40);
+    g.move(13, 1, 12, 44);
+    g.end(1);
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [1, 5, 9, 13] });
+    assert.equal(actions.filter((action) => action.type === "preview").length, 1);
   });
 
   it("ignores move and end events from another touch", () => {

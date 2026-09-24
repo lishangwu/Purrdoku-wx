@@ -75,6 +75,19 @@ import {
 import type { CellState } from "../types";
 import { shouldRenderFrame } from "./frame-pacer";
 import { playTopBarLayout } from "./top-bar-layout";
+import {
+  CELEBRATION_MS,
+  COMPLETE_SEQUENCE_MS,
+  LAST_CAT_HOLD_MS,
+  boardSuccessScale,
+  celebrationElapsed,
+  createConfetti,
+  type ConfettiParticle,
+} from "./level-complete";
+import {
+  mistakeHelpPulse,
+  shouldOfferMistakeHelp,
+} from "./mistake-help";
 
 type Scene = "home" | "play";
 type Modal =
@@ -180,12 +193,22 @@ export function createApp(env: Env) {
   let motionTime = 0;
   const boardMotions = new Map<number, { kind: BoardMotionKind; startedAt: number }>();
   const regionFlashes = new Map<number, number>();
+  let isLevelCompleting = false;
+  let levelCompleteStartedAt = 0;
+  let confetti: ConfettiParticle[] = [];
+  let celebrationSoundPlayed = false;
+  let mistakeHelpStartedAt: number | null = null;
 
   const puzzleQueue = new PuzzleQueue<PreparedPuzzle>();
 
   function clearBoardMotion(): void {
     boardMotions.clear();
     regionFlashes.clear();
+    isLevelCompleting = false;
+    levelCompleteStartedAt = 0;
+    confetti = [];
+    celebrationSoundPlayed = false;
+    mistakeHelpStartedAt = null;
   }
 
   function recordBoardMotion(
@@ -213,6 +236,12 @@ export function createApp(env: Env) {
     }
   }
 
+  function offerMistakeHelp(mistakesBefore: number): void {
+    if (!play || !shouldOfferMistakeHelp(mistakesBefore, play.mistakes, play.hasShownMistakeHelp)) return;
+    play.hasShownMistakeHelp = true;
+    mistakeHelpStartedAt = motionTime;
+  }
+
   const gestures = new GestureMachine(
     {
       later(ms, fn) {
@@ -221,7 +250,7 @@ export function createApp(env: Env) {
       },
     },
     (action) => {
-      if (!play || modal) return;
+      if (!play || modal || isLevelCompleting) return;
       const before = play.board.slice();
       const mistakesBefore = play.mistakes;
       let changed = false;
@@ -230,6 +259,7 @@ export function createApp(env: Env) {
         changed = placeOn(play, action.index);
         if (changed) {
           const wrong = play.mistakes > mistakesBefore;
+          if (wrong) offerMistakeHelp(mistakesBefore);
           sound.play(wrong ? "wrong" : "cat", settings);
           if (play.completed) onWin();
           buzz(wrong ? "medium" : "light");
@@ -240,6 +270,15 @@ export function createApp(env: Env) {
         previewPath = null;
       }
       if (action.type === "preview") {
+        if (settings.animationsEnabled && play) {
+          const previous = previewPath ? markPath(play.board, previewPath, play.level.size) : play.board;
+          const next = markPath(play.board, action.path, play.level.size);
+          for (let index = 0; index < next.length; index++) {
+            if (previous[index] === "empty" && next[index] === "markedX") {
+              boardMotions.set(index, { kind: "mark-in", startedAt: motionTime });
+            }
+          }
+        }
         previewPath = action.path;
         pressedCell = null;
       }
@@ -439,16 +478,21 @@ export function createApp(env: Env) {
     persist();
   }
 
-  function onWin(): void {
-    if (!play) return;
+  function playLevelCompleteSequence(): void {
+    if (!play || isLevelCompleting) return;
+    isLevelCompleting = true;
+    levelCompleteStartedAt = motionTime;
+    confetti = settings.animationsEnabled ? createConfetti() : [];
+    celebrationSoundPlayed = false;
+    previewPath = null;
+    pressedCell = null;
+    gestures.cancel();
+    modal = null;
     if (play.recorded) {
-      modal = "result";
-      persist();
       return;
     }
     play.recorded = true;
     const result = resultOf(play);
-    sound.play("win", settings);
     if (mode === "infinite") {
       infinite.stats.completed += 1;
       if (result.independent) infinite.stats.independent += 1;
@@ -461,9 +505,20 @@ export function createApp(env: Env) {
       };
       infinite.history = [...infinite.history, rec].slice(-20);
     }
-    modal = "result";
     persist();
     if (mode === "infinite") void prepareNextPuzzle();
+  }
+
+  function finishLevelCompleteSequence(): void {
+    if (!isLevelCompleting) return;
+    isLevelCompleting = false;
+    confetti = [];
+    modal = "result";
+    persist();
+  }
+
+  function onWin(): void {
+    playLevelCompleteSequence();
   }
 
   function cellAt(x: number, y: number): number | null {
@@ -482,6 +537,56 @@ export function createApp(env: Env) {
     const row = Math.floor((y - boardRect.y) / pitch);
     if (col < 0 || row < 0 || col >= n || row >= n) return null;
     return row * n + col;
+  }
+
+  function levelCompleteElapsed(): number {
+    return isLevelCompleting ? motionTime - levelCompleteStartedAt : 0;
+  }
+
+  function drawConfetti(ctx: CanvasRenderingContext2DLike): void {
+    if (!isLevelCompleting || !confetti.length) return;
+    const elapsed = celebrationElapsed(levelCompleteElapsed());
+    if (elapsed <= 0 || elapsed >= CELEBRATION_MS) return;
+    const progress = elapsed / CELEBRATION_MS;
+    ctx.save();
+    ctx.globalAlpha = Math.min(1, elapsed / 120) * Math.min(1, (CELEBRATION_MS - elapsed) / 180);
+    for (const particle of confetti) {
+      const wave = Math.sin(progress * 8 + particle.phase) * 10;
+      const x = particle.x * env.width + particle.drift * progress + wave;
+      const y = particle.y * env.height + (env.height * 0.78 + particle.fall * 45) * progress;
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(particle.spin * progress);
+      ctx.fillStyle = particle.color;
+      if (particle.shape === "dot") {
+        ctx.beginPath();
+        ctx.arc(0, 0, particle.size * 0.72, 0, Math.PI * 2);
+        ctx.fill();
+      } else if (particle.shape === "star") {
+        ctx.beginPath();
+        for (let point = 0; point < 10; point++) {
+          const radius = point % 2 === 0 ? particle.size : particle.size * 0.42;
+          const angle = -Math.PI / 2 + (point * Math.PI) / 5;
+          const px = Math.cos(angle) * radius;
+          const py = Math.sin(angle) * radius;
+          if (point === 0) ctx.moveTo(px, py);
+          else ctx.lineTo(px, py);
+        }
+        ctx.closePath();
+        ctx.fill();
+      } else {
+        ctx.beginPath();
+        ctx.ellipse(0, particle.size * 0.28, particle.size * 0.75, particle.size * 0.58, 0, 0, Math.PI * 2);
+        ctx.fill();
+        for (const [dx, dy] of [[-0.72, -0.45], [-0.24, -0.72], [0.28, -0.72], [0.75, -0.42]] as const) {
+          ctx.beginPath();
+          ctx.arc(dx * particle.size, dy * particle.size, particle.size * 0.23, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+    ctx.restore();
   }
 
   function addHit(id: string, rect: Rect): Rect {
@@ -909,6 +1014,11 @@ export function createApp(env: Env) {
       w: board,
       h: board,
     };
+    const boardScale = settings.animationsEnabled ? boardSuccessScale(levelCompleteElapsed()) : 1;
+    ctx.save();
+    ctx.translate(boardRect.x + board / 2, boardRect.y + board / 2);
+    ctx.scale(boardScale, boardScale);
+    ctx.translate(-(boardRect.x + board / 2), -(boardRect.y + board / 2));
     fillRound(
       ctx,
       {
@@ -920,6 +1030,20 @@ export function createApp(env: Env) {
       theme.surface,
       18,
     );
+    const pulseElapsed = celebrationElapsed(levelCompleteElapsed());
+    if (isLevelCompleting && pulseElapsed > 0 && pulseElapsed < 500 && settings.animationsEnabled) {
+      const glow = Math.sin((pulseElapsed / 500) * Math.PI);
+      ctx.save();
+      ctx.globalAlpha = glow * 0.55;
+      strokeRound(
+        ctx,
+        { x: boardRect.x - boardPad, y: boardRect.y - boardPad, w: board + frameExtra, h: board + frameExtra },
+        "#f4cf69",
+        18,
+        3,
+      );
+      ctx.restore();
+    }
 
     const pitch = board / n;
     const gap = Math.min(3, Math.max(2, pitch * 0.055));
@@ -999,6 +1123,7 @@ export function createApp(env: Env) {
         }
       }
     }
+    ctx.restore();
 
     // 手势行
     const gestureY = boardRect.y + board + boardPad + 12;
@@ -1007,7 +1132,13 @@ export function createApp(env: Env) {
     ctx.textAlign = "center";
     ctx.textBaseline = "middle";
     ctx.fillText("● 轻点标记 × · 双击放猫 · 滑动连续标记", cx, gestureY);
-    if (toast) {
+    const rescue = mistakeHelpStartedAt === null ? null : mistakeHelpPulse(motionTime - mistakeHelpStartedAt);
+    if (rescue && !rescue.active) mistakeHelpStartedAt = null;
+    if (rescue?.active) {
+      ctx.fillStyle = theme.accent;
+      ctx.font = "700 12px sans-serif";
+      ctx.fillText("遇到困难？试试提示 🐾", cx, gestureY + 16);
+    } else if (toast) {
       ctx.fillStyle = theme.accent;
       ctx.font = "12px sans-serif";
       ctx.fillText(toast, cx, gestureY + 16);
@@ -1028,6 +1159,23 @@ export function createApp(env: Env) {
         w: btnD,
         h: btnD + btnLabelGap,
       });
+      const hintPulse = settings.animationsEnabled && ids[i] === "hint" && mistakeHelpStartedAt !== null
+        ? mistakeHelpPulse(motionTime - mistakeHelpStartedAt)
+        : null;
+      if (hintPulse?.active) {
+        ctx.save();
+        ctx.translate(cxBtn, barY + btnD / 2);
+        ctx.scale(hintPulse.scale, hintPulse.scale);
+        ctx.translate(-cxBtn, -(barY + btnD / 2));
+        ctx.save();
+        ctx.globalAlpha = hintPulse.glow;
+        ctx.strokeStyle = theme.accent;
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(cxBtn, barY + btnD / 2, btnD / 2 + 4, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+      }
       ctx.fillStyle = ids[i] === "hint" ? theme.hintTint : theme.surface;
       ctx.beginPath();
       ctx.arc(cxBtn, barY + btnD / 2, btnD / 2, 0, Math.PI * 2);
@@ -1041,6 +1189,7 @@ export function createApp(env: Env) {
       ctx.font = "11px sans-serif";
       ctx.textBaseline = "top";
       ctx.fillText(name, cxBtn, barY + btnD + 4);
+      if (hintPulse?.active) ctx.restore();
     });
 
     if (footerH > 0) {
@@ -1527,6 +1676,7 @@ export function createApp(env: Env) {
       if (undo(play)) recordBoardMotion(before);
     }
     if (id === "hint" && play && !play.completed) {
+      mistakeHelpStartedAt = null;
       hint = peekHint(play);
       if (hint) {
         noteHintShown(play);
@@ -1597,6 +1747,10 @@ export function createApp(env: Env) {
     } else if (activeTouchId !== id) {
       return;
     }
+    if (isLevelCompleting) {
+      if (kind === "end" || kind === "cancel") activeTouchId = null;
+      return;
+    }
     try {
       if (kind === "cancel") {
         gestures.cancel(id);
@@ -1629,11 +1783,11 @@ export function createApp(env: Env) {
       if (cell !== null && play && !play.completed) {
         if (kind === "start") {
           pressedCell = cell;
-          gestures.start(cell, id);
+          gestures.start(cell, id, x, y, play.level.size);
         }
-        if (kind === "move") gestures.move(cell, id);
+        if (kind === "move") gestures.move(cell, id, x, y);
         if (kind === "end") {
-          gestures.move(cell, id);
+          gestures.move(cell, id, x, y);
           gestures.end(id);
           pressedCell = null;
         }
@@ -1646,7 +1800,7 @@ export function createApp(env: Env) {
       }
       if (kind === "move") uiPress = keepPress(uiPress, hits, x, y, id);
       if (kind === "end") {
-        gestures.cancel(id);
+        gestures.end(id);
         previewPath = null;
         pressedCell = null;
         const target = releasePress(uiPress, hits, x, y, id);
@@ -1671,6 +1825,7 @@ export function createApp(env: Env) {
     if (code === "Space") changed = toggleCell(play, focus);
     if (code === "Enter") {
       changed = placeOn(play, focus);
+      if (play.mistakes > mistakesBefore) offerMistakeHelp(mistakesBefore);
       if (play.completed) onWin();
     }
     if (changed) recordBoardMotion(before, code === "Enter" ? focus : null, mistakesBefore);
@@ -1683,7 +1838,10 @@ export function createApp(env: Env) {
     try {
       paintPaper(ctx, env.width, env.height);
       if (scene === "home") drawHome(ctx);
-      else drawPlay(ctx);
+      else {
+        drawPlay(ctx);
+        drawConfetti(ctx);
+      }
       if (modal) hits = [];
       drawModal(ctx);
       if (uiPress) {
@@ -1707,6 +1865,15 @@ export function createApp(env: Env) {
     if (visible && !modal) visualTime += dt * 1000;
     const counting = visible && scene === "play" && !!play && !play.completed && !modal;
     if (play) tickPlay(play, dt, counting);
+    if (isLevelCompleting) {
+      const elapsed = levelCompleteElapsed();
+      if (!celebrationSoundPlayed && elapsed >= LAST_CAT_HOLD_MS) {
+        celebrationSoundPlayed = true;
+        sound.play("win", settings);
+        buzz("light");
+      }
+      if (elapsed >= COMPLETE_SEQUENCE_MS) finishLevelCompleteSequence();
+    }
     if (shouldRenderFrame(ts, lastDrawTs)) {
       lastDrawTs = ts;
       draw();

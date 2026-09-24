@@ -47,7 +47,7 @@ export function placeCat(
   index: number,
   autoMark: boolean,
 ): { board: CellState[]; correct: boolean } | null {
-  if (board[index] === "cat") return null;
+  if (board[index] === "cat" || board[index] === "wrongX") return null;
   const n = level.size;
   const correct = level.solution.some((p) => p.row * n + p.col === index);
   const next = board.slice();

@@ -42,7 +42,7 @@ async function main() {
     "game.js",
     "game.json",
     "images/cat-1024.png",
-    ...fs.readdirSync(path.join(root, "assets/cats8")).filter((file) => file.endsWith(".png")).map((file) => `assets/cats8/${file}`),
+    "assets/cat-atlas.png",
   ];
   const runtimeBytes = runtimeFiles.reduce(
     (total, file) => total + fs.statSync(path.join(root, file)).size,

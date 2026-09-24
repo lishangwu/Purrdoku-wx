@@ -1,4 +1,4 @@
-import { CAT_SPRITE_PATHS } from "../game/cat-variants";
+import { CAT_ATLAS_PATH, CAT_FRAME_COUNT, CAT_VARIANT_COUNT } from "../game/cat-variants";
 import { fillRound, roundBox, theme, type Rect } from "./theme";
 
 export function paintPaper(
@@ -182,9 +182,7 @@ export function drawMiniCat(
   ctx.restore();
 }
 
-/** 4×2 精灵图，由棋盘时间轴选择帧。 */
-const BLINK_COLS = 4;
-const BLINK_ROWS = 2;
+/** 8×12 图集：横向 8 帧，纵向 12 种猫。 */
 
 function drawBlinkCat(
   ctx: CanvasRenderingContext2DLike,
@@ -194,18 +192,17 @@ function drawBlinkCat(
   frame: number,
   catVariant: number,
 ): boolean {
-  const blinkImg = blinkImages[catVariant];
-  if (!blinkImg || blinkImg.width <= 0) return false;
-  const fw = blinkImg.width / BLINK_COLS;
-  const fh = blinkImg.height / BLINK_ROWS;
-  const col = frame % BLINK_COLS;
-  const row = Math.floor(frame / BLINK_COLS);
+  const blinkImg = blinkAtlas;
+  if (!blinkImg || blinkImg.width <= 0 || catVariant < 0 || catVariant >= CAT_VARIANT_COUNT) return false;
+  const fw = blinkImg.width / CAT_FRAME_COUNT;
+  const fh = blinkImg.height / CAT_VARIANT_COUNT;
+  const col = Math.max(0, Math.min(CAT_FRAME_COUNT - 1, frame));
   // 格子 80% 居中，保持帧原始 1:1 比例，不裁切、不加底
   const draw = size * 0.8;
   ctx.drawImage(
     blinkImg,
     col * fw,
-    row * fh,
+    catVariant * fh,
     fw,
     fh,
     cx - draw / 2,
@@ -390,7 +387,7 @@ export function drawHeroPortrait(
 
 let heroCatImg: CanvasImageSourceLike | null = null;
 let heroCatTried = false;
-const blinkImages: (CanvasImageSourceLike | null)[] = CAT_SPRITE_PATHS.map(() => null);
+let blinkAtlas: CanvasImageSourceLike | null = null;
 let blinkTried = false;
 
 function makeImage(canvas: HTMLCanvasElementLike): CanvasImageSourceLike | null {
@@ -420,14 +417,12 @@ export function loadHeroCat(canvas: HTMLCanvasElementLike): void {
   });
 }
 
-/** 加载棋盘猫精灵图（8 帧） */
+/** 加载包含 12 种猫、每种 8 帧的棋盘猫图集。 */
 export function loadCatBlink(canvas: HTMLCanvasElementLike): void {
   if (blinkTried) return;
   blinkTried = true;
-  CAT_SPRITE_PATHS.forEach((path, variant) => {
-    loadPackImage(canvas, path, (img) => {
-      blinkImages[variant] = img;
-    });
+  loadPackImage(canvas, CAT_ATLAS_PATH, (img) => {
+    blinkAtlas = img;
   });
 }
 

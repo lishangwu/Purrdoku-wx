@@ -1,4 +1,4 @@
-import { CAT_SPRITE_PATHS } from "./cat-variants";
+import { CAT_VARIANT_COUNT } from "./cat-variants";
 import type { CellState, HintPlan, Level, Settings, Snapshot } from "../types";
 import {
   boardKey,
@@ -19,6 +19,7 @@ export interface PlayState {
   catFaces: number[];
   mistakes: number;
   totalMistakes: number;
+  hasShownMistakeHelp: boolean;
   hintsUsed: number;
   elapsed: number;
   totalElapsed: number;
@@ -30,7 +31,7 @@ export interface PlayState {
   settings: Settings;
 }
 
-export const CAT_FACE_COUNT = CAT_SPRITE_PATHS.length;
+export const CAT_FACE_COUNT = CAT_VARIANT_COUNT;
 
 export function randomCatFace(): number {
   return Math.floor(Math.random() * CAT_FACE_COUNT);
@@ -42,6 +43,7 @@ function emptyFaces(size: number): number[] {
 
 /** 旧存档补齐 catFaces；已有猫格随机分配表情 */
 export function ensureCatFaces(play: PlayState): void {
+  play.hasShownMistakeHelp = Boolean(play.hasShownMistakeHelp);
   const n = play.board.length;
   if (!play.catFaces || play.catFaces.length !== n) {
     play.catFaces = Array.from({ length: n }, (_, i) => play.catFaces?.[i] ?? -1);
@@ -68,6 +70,7 @@ export function createPlay(level: Level, settings: Settings = defaultSettings())
     catFaces: emptyFaces(level.size),
     mistakes: 0,
     totalMistakes: 0,
+    hasShownMistakeHelp: false,
     hintsUsed: 0,
     elapsed: 0,
     totalElapsed: 0,
@@ -151,6 +154,7 @@ export function restart(play: PlayState, mode: "infinite" | "daily"): void {
     play.board = emptyBoard(play.level.size);
     play.catFaces = emptyFaces(play.level.size);
     play.mistakes = 0;
+    play.hasShownMistakeHelp = false;
     play.elapsed = 0;
     play.history = [];
     play.completed = false;

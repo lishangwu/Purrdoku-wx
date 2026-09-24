@@ -47,14 +47,13 @@ describe("board rules", () => {
     assert.equal(bad?.board[idx(4, 0, 0)], "wrongX");
   });
 
-  it("counts a second attempt on a wrong cell as another miss", () => {
+  it("ignores a repeated attempt on an already wrong cell", () => {
     const level = miniLevel();
     const board = emptyBoard(4);
     const first = placeCat(level, board, 0, false)!;
     assert.equal(first.correct, false);
-    const second = placeCat(level, first.board, 0, false)!;
-    assert.equal(second.correct, false);
-    assert.equal(second.board[0], "wrongX");
+    const second = placeCat(level, first.board, 0, false);
+    assert.equal(second, null);
   });
 
   it("auto-marks the row, column, region and 8-neighborhood of a placed cat", () => {
@@ -91,6 +90,13 @@ describe("board rules", () => {
     board[idx(4, 1, 1)] = "cat";
     const next = markLine(board, idx(4, 0, 0), idx(4, 2, 2), 4);
     assert.equal(next[idx(4, 1, 1)], "cat");
+  });
+
+  it("keeps existing X marks while a drag paints later cells", () => {
+    const board = emptyBoard(4);
+    board[1] = "markedX";
+    const next = markLine(board, 0, 3, 4);
+    assert.deepEqual(next.slice(0, 4), ["markedX", "markedX", "markedX", "markedX"]);
   });
 
   it("wins only when every correct cat is placed, even if empty cells remain", () => {
