@@ -188,6 +188,7 @@ export function createApp(env: Env) {
   let toast = "";
   let preparedPuzzle: PreparedPuzzle | null = null;
   let preparingPuzzle = false;
+  let preparingCandidates = 0;
   let generationError = "";
   let visualTime = 0;
   let motionTime = 0;
@@ -345,6 +346,7 @@ export function createApp(env: Env) {
     const plan = planFor(ordinal);
     const key = generationKey(ordinal, plan, maxCandidates);
     preparingPuzzle = true;
+    preparingCandidates = maxCandidates;
     generationError = "";
     toast = "正在准备下一关…";
     try {
@@ -377,6 +379,7 @@ export function createApp(env: Env) {
       return null;
     } finally {
       preparingPuzzle = false;
+      preparingCandidates = 0;
     }
   }
 
@@ -457,10 +460,14 @@ export function createApp(env: Env) {
   }
 
   async function nextInfinite(): Promise<void> {
-    if (!play || !play.completed || preparingPuzzle) return;
+    if (!play || !play.completed) return;
     if (!preparedPuzzle) {
-      puzzleQueue.clear();
-      await prepareNextPuzzle(800);
+      if (preparingPuzzle) {
+        await prepareNextPuzzle(preparingCandidates || 80);
+      } else {
+        puzzleQueue.clear();
+        await prepareNextPuzzle(800);
+      }
     }
     const prepared = preparedPuzzle;
     if (!prepared || prepared.ordinal !== infinite.ordinal + 1) return;
@@ -1655,6 +1662,15 @@ export function createApp(env: Env) {
     sound.play("click", settings);
     buzz();
     sound.setMusic(settings.musicEnabled && visible);
+    if (id === "close" && modal === "result") {
+      if (mode === "infinite") void nextInfinite();
+      else {
+        scene = "home";
+        modal = null;
+        persist();
+      }
+      return;
+    }
     if (id === "close" || id === "gotIt") {
       modal = null;
       hint = null;
