@@ -18,6 +18,7 @@ export interface GenerateRequest {
   maxF?: number;
   maxR?: number;
   maxCandidates?: number;
+  candidateOffset?: number;
   recentSignatures?: string[];
 }
 
@@ -152,9 +153,10 @@ function repairUnique(level: Level, rng: Rng): boolean {
 
 export function generatePuzzle(request: GenerateRequest): Level | null {
   const maxCandidates = request.maxCandidates ?? 800;
+  const candidateOffset = request.candidateOffset ?? 0;
   const hardCap = request.hardCap ?? 78;
   const recent = new Set(request.recentSignatures ?? []);
-  for (let i = 0; i < maxCandidates; i++) {
+  for (let i = candidateOffset; i < candidateOffset + maxCandidates; i++) {
     const rng = rngFrom(`${request.seed}|${i}`);
     const queens = placeQueens(request.size, rng);
     if (!queens) continue;

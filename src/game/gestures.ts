@@ -11,8 +11,6 @@ export interface GestureClock {
   later(ms: number, fn: () => void): () => void;
 }
 
-type DragDirection = "horizontal" | "vertical";
-
 export class GestureMachine {
   private touchId: number | null = null;
   private startCell = -1;
@@ -22,7 +20,6 @@ export class GestureMachine {
   private startY = 0;
   private path: number[] = [];
   private visited = new Set<number>();
-  private direction: DragDirection | null = null;
   private dragging = false;
   private secondTap = false;
   private awaitingSecond = false;
@@ -41,7 +38,6 @@ export class GestureMachine {
     this.startY = y;
     this.path = [cell];
     this.visited = new Set([cell]);
-    this.direction = null;
     this.dragging = false;
     if (this.awaitingSecond && this.pendingCell === cell) {
       this.clearTimer();
@@ -55,46 +51,33 @@ export class GestureMachine {
 
   move(cell: number, touchId: number, x = 0, y = 0): void {
     if (this.touchId !== touchId) return;
-    if (!this.direction) {
+    if (!this.dragging) {
       const dx = x - this.startX;
       const dy = y - this.startY;
       if (Math.max(Math.abs(dx), Math.abs(dy)) < DRAG_THRESHOLD_PX) return;
-      this.direction = Math.abs(dx) > Math.abs(dy) ? "horizontal" : "vertical";
       this.dragging = true;
       this.secondTap = false;
       this.clearTimer();
       this.awaitingSecond = false;
     }
 
-    const startRow = Math.floor(this.startCell / this.boardSize);
-    const startCol = this.startCell % this.boardSize;
-    const currentRow = Math.floor(cell / this.boardSize);
-    const currentCol = cell % this.boardSize;
-    const projected = this.direction === "horizontal"
-      ? startRow * this.boardSize + currentCol
-      : currentRow * this.boardSize + startCol;
-    if (projected === this.lastCell) return;
+    if (cell === this.lastCell) return;
 
     const lastRow = Math.floor(this.lastCell / this.boardSize);
     const lastCol = this.lastCell % this.boardSize;
-    const targetRow = Math.floor(projected / this.boardSize);
-    const targetCol = projected % this.boardSize;
-    const distance = this.direction === "horizontal"
-      ? Math.abs(targetCol - lastCol)
-      : Math.abs(targetRow - lastRow);
-    const step = this.direction === "horizontal"
-      ? Math.sign(targetCol - lastCol)
-      : Math.sign(targetRow - lastRow);
-    for (let offset = 1; offset <= distance; offset++) {
-      const row = this.direction === "vertical" ? lastRow + step * offset : startRow;
-      const col = this.direction === "horizontal" ? lastCol + step * offset : startCol;
+    const targetRow = Math.floor(cell / this.boardSize);
+    const targetCol = cell % this.boardSize;
+    const steps = Math.max(Math.abs(targetRow - lastRow), Math.abs(targetCol - lastCol));
+    for (let step = 1; step <= steps; step++) {
+      const row = Math.round(lastRow + ((targetRow - lastRow) * step) / steps);
+      const col = Math.round(lastCol + ((targetCol - lastCol) * step) / steps);
       const index = row * this.boardSize + col;
       if (!this.visited.has(index)) {
         this.visited.add(index);
         this.path.push(index);
       }
     }
-    this.lastCell = projected;
+    this.lastCell = cell;
     this.emit({ type: "preview", path: this.path.slice() });
   }
 
@@ -129,7 +112,6 @@ export class GestureMachine {
 
   private resetDrag(): void {
     this.dragging = false;
-    this.direction = null;
     this.lastCell = -1;
     this.path = [];
     this.visited.clear();

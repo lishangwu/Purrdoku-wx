@@ -329,7 +329,12 @@ export function createApp(env: Env) {
     );
   }
 
-  function generationKey(ordinal: number, plan: LevelPlan, maxCandidates: number): string {
+  function generationKey(
+    ordinal: number,
+    plan: LevelPlan,
+    maxCandidates: number,
+    candidateOffset: number,
+  ): string {
     return JSON.stringify([
       infinite.playerSeed,
       ordinal,
@@ -337,6 +342,7 @@ export function createApp(env: Env) {
       infinite.history.map((entry) => entry.signature),
       CURRENT_VERSIONS,
       maxCandidates,
+      candidateOffset,
     ]);
   }
 
@@ -344,36 +350,53 @@ export function createApp(env: Env) {
     const ordinal = infinite.ordinal + 1;
     if (preparedPuzzle?.ordinal === ordinal) return preparedPuzzle;
     const plan = planFor(ordinal);
-    const key = generationKey(ordinal, plan, maxCandidates);
     preparingPuzzle = true;
     preparingCandidates = maxCandidates;
     generationError = "";
     toast = "正在准备下一关…";
     try {
-      const prepared = await puzzleQueue.prepare(key, () => {
-        const generated = makePuzzle({
-          seed: `${infinite.playerSeed}|${ordinal}|v${CURRENT_VERSIONS.generator}`,
-          size: plan.size,
-          scoreMin: plan.scoreMin,
-          scoreMax: plan.scoreMax,
-          combinations: plan.combinations,
-          easyGeometry: plan.easyGeometry,
-          hardCap: plan.hardCap,
-          maxF: plan.maxF,
-          maxR: plan.maxR,
-          recentSignatures: infinite.history.slice(-20).map((entry) => entry.signature),
-          maxCandidates,
-        });
-        return generated
-          ? { ordinal, plan, level: tagGeneratedLevel(generated, plan.purpose) }
-          : null;
-      });
+      const scorePadding = maxCandidates > 80 ? 3 : 0;
+      const batchSize = maxCandidates > 80 ? 200 : maxCandidates;
+      let prepared: PreparedPuzzle | null = null;
+      for (let candidateOffset = 0; candidateOffset < maxCandidates; candidateOffset += batchSize) {
+        const count = Math.min(batchSize, maxCandidates - candidateOffset);
+        const key = generationKey(ordinal, plan, maxCandidates, candidateOffset);
+        try {
+          prepared = await puzzleQueue.prepare(key, () => {
+            const generated = makePuzzle({
+              seed: `${infinite.playerSeed}|${ordinal}|v${CURRENT_VERSIONS.generator}`,
+              size: plan.size,
+              scoreMin: Math.max(0, plan.scoreMin - scorePadding),
+              scoreMax: Math.min(plan.hardCap, plan.scoreMax + scorePadding),
+              combinations: plan.combinations,
+              easyGeometry: plan.easyGeometry,
+              hardCap: plan.hardCap,
+              maxF: plan.maxF,
+              maxR: plan.maxR,
+              recentSignatures: infinite.history.slice(-20).map((entry) => entry.signature),
+              maxCandidates: count,
+              candidateOffset,
+            });
+            return generated
+              ? { ordinal, plan, level: tagGeneratedLevel(generated, plan.purpose) }
+              : null;
+          });
+          break;
+        } catch {
+          if (ordinal !== infinite.ordinal + 1) return null;
+        }
+      }
+      if (!prepared) throw new Error("没有题目满足当前约束");
       if (ordinal !== infinite.ordinal + 1) return null;
       preparedPuzzle = prepared;
       toast = "下一关准备好啦";
       return prepared;
     } catch {
       if (ordinal !== infinite.ordinal + 1) return null;
+      if (maxCandidates < 5_000) {
+        puzzleQueue.clear();
+        return prepareNextPuzzle(5_000);
+      }
       generationError = "这次没准备好，当前进度已保留。";
       toast = generationError;
       return null;
@@ -462,11 +485,10 @@ export function createApp(env: Env) {
   async function nextInfinite(): Promise<void> {
     if (!play || !play.completed) return;
     if (!preparedPuzzle) {
-      if (preparingPuzzle) {
-        await prepareNextPuzzle(preparingCandidates || 80);
-      } else {
+      if (preparingPuzzle) return;
+      else {
         puzzleQueue.clear();
-        await prepareNextPuzzle(800);
+        await prepareNextPuzzle(5_000);
       }
     }
     const prepared = preparedPuzzle;

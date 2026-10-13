@@ -73,7 +73,7 @@ describe("gestures", () => {
     assert.ok(actions.every((a) => a.type !== "toggle"));
   });
 
-  it("locks the first direction despite perpendicular finger drift", () => {
+  it("continues marking when the finger turns onto another row", () => {
     const actions: GestureAction[] = [];
     const clock = mockClock();
     const g = new GestureMachine(clock, (a) => actions.push(a));
@@ -81,7 +81,19 @@ describe("gestures", () => {
     g.move(2, 1, 20, 1);
     g.move(8, 1, 28, 30);
     g.end(1);
-    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 1, 2] });
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 1, 2, 5, 8] });
+  });
+
+  it("marks two rows in one continuous serpentine drag", () => {
+    const actions: GestureAction[] = [];
+    const clock = mockClock();
+    const g = new GestureMachine(clock, (a) => actions.push(a));
+    g.start(0, 1, 0, 0, 4);
+    g.move(3, 1, 30, 0);
+    g.move(7, 1, 30, 10);
+    g.move(4, 1, 0, 10);
+    g.end(1);
+    assert.deepEqual(actions.at(-1), { type: "drag", path: [0, 1, 2, 3, 7, 6, 5, 4] });
   });
 
   it("waits for the movement threshold before becoming a drag", () => {

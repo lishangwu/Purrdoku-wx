@@ -42,7 +42,7 @@ async function main() {
     "game.js",
     "game.json",
     "images/cat-1024.png",
-    "assets/cat-atlas.png",
+    "assets/cats/cat-blink.png",
   ];
   const runtimeBytes = runtimeFiles.reduce(
     (total, file) => total + fs.statSync(path.join(root, file)).size,
