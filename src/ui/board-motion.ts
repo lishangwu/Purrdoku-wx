@@ -46,8 +46,8 @@ export function regionFlashAmount(elapsedMs: number): number {
   return progress >= 1 ? 0 : Math.sin(progress * Math.PI) * 0.16;
 }
 
-export const CAT_IDLE_FRAME_COUNT = 8;
-export const CAT_IDLE_FRAME_MS = 45;
+export const CAT_IDLE_FRAME_COUNT = 4;
+export const CAT_IDLE_FRAME_MS = 90;
 export const CAT_IDLE_CYCLE_MS = CAT_IDLE_FRAME_COUNT * CAT_IDLE_FRAME_MS;
 
 export function catIdleFrame(timeMs: number, cellIndex: number, active: boolean): number {

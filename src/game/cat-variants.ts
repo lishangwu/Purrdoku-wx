@@ -1,4 +1,6 @@
-/** One row per cat variant, eight animation frames per row. */
-export const CAT_ATLAS_PATH = "assets/cat-atlas.png";
-export const CAT_VARIANT_COUNT = 12;
-export const CAT_FRAME_COUNT = 8;
+/** Single blink sheet: 2×2 frames, one cat style. */
+export const CAT_ATLAS_PATH = "assets/cats/cat-blink.png";
+export const CAT_VARIANT_COUNT = 1;
+export const CAT_FRAME_COUNT = 4;
+export const CAT_SHEET_COLS = 2;
+export const CAT_SHEET_ROWS = 2;

@@ -1,4 +1,10 @@
-import { CAT_ATLAS_PATH, CAT_FRAME_COUNT, CAT_VARIANT_COUNT } from "../game/cat-variants";
+import {
+  CAT_ATLAS_PATH,
+  CAT_FRAME_COUNT,
+  CAT_SHEET_COLS,
+  CAT_SHEET_ROWS,
+  CAT_VARIANT_COUNT,
+} from "../game/cat-variants";
 import { fillRound, roundBox, theme, type Rect } from "./theme";
 
 export function paintPaper(
@@ -182,7 +188,7 @@ export function drawMiniCat(
   ctx.restore();
 }
 
-/** 8×12 图集：横向 8 帧，纵向 12 种猫。 */
+/** 2×2 眨眼图：左上→右上→左下→右下共 4 帧，一种猫。 */
 
 function drawBlinkCat(
   ctx: CanvasRenderingContext2DLike,
@@ -194,15 +200,17 @@ function drawBlinkCat(
 ): boolean {
   const blinkImg = blinkAtlas;
   if (!blinkImg || blinkImg.width <= 0 || catVariant < 0 || catVariant >= CAT_VARIANT_COUNT) return false;
-  const fw = blinkImg.width / CAT_FRAME_COUNT;
-  const fh = blinkImg.height / CAT_VARIANT_COUNT;
-  const col = Math.max(0, Math.min(CAT_FRAME_COUNT - 1, frame));
+  const fw = blinkImg.width / CAT_SHEET_COLS;
+  const fh = blinkImg.height / CAT_SHEET_ROWS;
+  const index = Math.max(0, Math.min(CAT_FRAME_COUNT - 1, frame));
+  const col = index % CAT_SHEET_COLS;
+  const row = Math.floor(index / CAT_SHEET_COLS);
   // 格子 80% 居中，保持帧原始 1:1 比例，不裁切、不加底
   const draw = size * 0.8;
   ctx.drawImage(
     blinkImg,
     col * fw,
-    catVariant * fh,
+    row * fh,
     fw,
     fh,
     cx - draw / 2,
@@ -417,7 +425,7 @@ export function loadHeroCat(canvas: HTMLCanvasElementLike): void {
   });
 }
 
-/** 加载包含 12 种猫、每种 8 帧的棋盘猫图集。 */
+/** 加载棋盘猫眨眼图（单文件 2×2 四帧）。 */
 export function loadCatBlink(canvas: HTMLCanvasElementLike): void {
   if (blinkTried) return;
   blinkTried = true;

@@ -15,7 +15,7 @@ import { defaultSettings } from "../types";
 export interface PlayState {
   level: Level;
   board: CellState[];
-  /** 与 board 等长：猫格的表情索引 0–11，非猫为 -1 */
+  /** 与 board 等长：猫格样式索引（现仅一种，恒为 0），非猫为 -1 */
   catFaces: number[];
   mistakes: number;
   totalMistakes: number;

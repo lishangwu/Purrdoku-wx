@@ -18,21 +18,21 @@ import { idx } from "./helpers";
 import { starsFor } from "../src/engine/board";
 
 describe("play session", () => {
-  it("randomizes once per cat and preserves variants through undo and storage", (t) => {
+  it("assigns a face once per cat and preserves it through undo and storage", (t) => {
     const play = createPlay(miniLevel(), { ...defaultSettings(), autoMarkEnabled: false });
     const random = t.mock.method(Math, "random", () => 0.45);
     placeOn(play, 1);
     assert.equal(random.mock.callCount(), 1);
-    assert.equal(play.catFaces[1], 5);
+    assert.equal(play.catFaces[1], 0);
     placeOn(play, 1);
     placeOn(play, 0);
     toggleCell(play, 2);
     ensureCatFaces(play);
     undo(play);
-    assert.equal(play.catFaces[1], 5);
+    assert.equal(play.catFaces[1], 0);
     const restored = JSON.parse(JSON.stringify(play));
     ensureCatFaces(restored);
-    assert.equal(restored.catFaces[1], 5);
+    assert.equal(restored.catFaces[1], 0);
     assert.equal(random.mock.callCount(), 1);
     undo(play);
     undo(play);
@@ -55,7 +55,7 @@ describe("play session", () => {
     const cats = play.board.flatMap((cell, i) => cell === "cat" ? [i] : []);
     assert.ok(cats.length > 0);
     assert.equal(random.mock.callCount(), cats.length);
-    assert.ok(cats.every((i) => play.catFaces[i] === 11));
+    assert.ok(cats.every((i) => play.catFaces[i] === 0));
     undo(play);
     assert.ok(play.catFaces.every((face) => face === -1));
   });

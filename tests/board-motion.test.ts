@@ -29,9 +29,9 @@ describe("board motion", () => {
   it("flashes once and keeps idle cats static when motion is paused", () => {
     assert.ok(regionFlashAmount(225) > 0.15);
     assert.equal(regionFlashAmount(450), 0);
-    assert.equal(CAT_IDLE_FRAME_MS, 45);
+    assert.equal(CAT_IDLE_FRAME_MS, 90);
     assert.equal(CAT_IDLE_CYCLE_MS, 360);
-    for (let frame = 0; frame < 8; frame++) {
+    for (let frame = 0; frame < 4; frame++) {
       assert.equal(catIdleFrame(2700 + frame * CAT_IDLE_FRAME_MS, 0, true), frame);
     }
     assert.equal(catIdleFrame(2700 + CAT_IDLE_CYCLE_MS, 0, true), 0);
