@@ -1,6 +1,6 @@
 import { it } from "node:test";
 import assert from "node:assert/strict";
-import { presentHint } from "../src/ui/hint-presentation";
+import { parseHintText, presentHint } from "../src/ui/hint-presentation";
 import { emptyBoard, boardKey } from "../src/engine/board";
 import { previewHintBoard } from "../src/game/play";
 import { miniLevel } from "./helpers";
@@ -11,7 +11,13 @@ it("uses actual unit direction for both line-to-region and region-to-line hints"
   const plan: HintPlan = { kind: "exclude", rule: "B3", units: [4, 8], sources: [], targets: [], title: "", reason: "", boardKey: "" };
   assert.match(presentHint(level, plan).steps[0]!.description, /第1列/);
   plan.units = [8, 4];
-  assert.match(presentHint(level, plan).steps[0]!.description, /区域/);
+  const regionDescription = presentHint(level, plan).steps[0]!.description;
+  assert.match(regionDescription, /区域/);
+  assert.doesNotMatch(regionDescription, /薰衣草紫|奶油黄|青蓝|玫粉/);
+  assert.deepEqual(parseHintText(regionDescription).find(part => part.kind === "region"), {
+    kind: "region",
+    region: 0,
+  });
   assert.match(presentHint(level, plan).steps[3]!.description, /第1列/);
 });
 

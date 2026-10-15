@@ -1,5 +1,26 @@
 import type { HintPlan, Level, Settings } from "../types";
-import { regionColorNames } from "../engine/hint";
+
+const REGION_MARKER = /\{\{region:(\d+)\}\}/g;
+
+export type HintTextPart =
+  | { kind: "text"; text: string }
+  | { kind: "region"; region: number };
+
+export function hintRegion(region: number): string {
+  return `{{region:${region}}}`;
+}
+
+export function parseHintText(text: string): HintTextPart[] {
+  const parts: HintTextPart[] = [];
+  let offset = 0;
+  for (const match of text.matchAll(REGION_MARKER)) {
+    if (match.index > offset) parts.push({ kind: "text", text: text.slice(offset, match.index) });
+    parts.push({ kind: "region", region: Number(match[1]) });
+    offset = match.index + match[0].length;
+  }
+  if (offset < text.length) parts.push({ kind: "text", text: text.slice(offset) });
+  return parts;
+}
 
 export interface HintStep {
   description: string;
@@ -19,7 +40,7 @@ export function presentHint(level: Level, hint: HintPlan, mode: Settings["hintMo
   const n = level.size;
   const units = hint.units ?? [];
   const name = (u: number) => u < n ? `第${u + 1}行` : u < n * 2
-    ? `第${u - n + 1}列` : `${regionColorNames[u - n * 2] ?? "这个颜色"}区域`;
+    ? `第${u - n + 1}列` : `${hintRegion(u - n * 2)}区域`;
   const members = (u: number) => level.regions.flat().flatMap((region, i) =>
     (u < n ? Math.floor(i / n) === u : u < n * 2 ? i % n === u - n : region === u - n * 2) ? [i] : []);
   const first = units[0] === undefined ? "这些位置" : name(units[0]);

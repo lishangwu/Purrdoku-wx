@@ -24,7 +24,7 @@ import { dailyIndex, dailyKey, localDate } from "../game/daily";
 import { GestureMachine } from "../game/gestures";
 import { PuzzleQueue } from "../game/puzzle-queue";
 import { milestoneFor, sound } from "../game/feedback";
-import { presentHint } from "./hint-presentation";
+import { parseHintText, presentHint, type HintTextPart } from "./hint-presentation";
 import { HintSession } from "./hint-session";
 import {
   INFINITE_KEY,
@@ -99,6 +99,119 @@ type Modal =
   | "result"
   | "restart"
   | "clear";
+
+type HintTextLine = HintTextPart[];
+const HINT_SWATCH_GAP = 3;
+
+function wrapHintText(
+  ctx: CanvasRenderingContext2DLike,
+  text: string,
+  width: number,
+  font: string,
+  swatchSize: number,
+): HintTextLine[] {
+  ctx.font = font;
+  const lines: HintTextLine[] = [];
+  let line: HintTextLine = [];
+  let lineWidth = 0;
+  const push = (part: HintTextPart, partWidth: number) => {
+    if (line.length && lineWidth + partWidth > width) {
+      lines.push(line);
+      line = [];
+      lineWidth = 0;
+    }
+    if (part.kind === "text" && line.at(-1)?.kind === "text") {
+      (line.at(-1) as { kind: "text"; text: string }).text += part.text;
+    } else {
+      line.push(part);
+    }
+    lineWidth += partWidth;
+  };
+  for (const part of parseHintText(text)) {
+    if (part.kind === "region") {
+      push(part, swatchSize + HINT_SWATCH_GAP * 2);
+      continue;
+    }
+    for (const ch of part.text) push({ kind: "text", text: ch }, ctx.measureText(ch).width);
+  }
+  if (line.length) lines.push(line);
+  return lines;
+}
+
+function drawHintTextLine(
+  ctx: CanvasRenderingContext2DLike,
+  line: HintTextLine,
+  x: number,
+  y: number,
+  swatchSize: number,
+  color: string,
+): void {
+  let cursor = x;
+  for (const part of line) {
+    if (part.kind === "text") {
+      ctx.fillStyle = color;
+      ctx.fillText(part.text, cursor, y);
+      cursor += ctx.measureText(part.text).width;
+      continue;
+    }
+    const top = y + 1;
+    const rect = {
+      x: cursor + HINT_SWATCH_GAP,
+      y: top,
+      w: swatchSize,
+      h: swatchSize,
+    };
+    fillRound(ctx, rect, theme.regions[part.region % theme.regions.length]!, 3);
+    strokeRound(ctx, rect, "rgba(41,59,82,0.22)", 3, 1);
+    cursor += swatchSize + HINT_SWATCH_GAP * 2;
+  }
+}
+
+function drawRuleMiniGrid(
+  ctx: CanvasRenderingContext2DLike,
+  x: number,
+  y: number,
+  size: number,
+  rule: number,
+): void {
+  const gap = Math.max(0.8, size * 0.045);
+  const cell = (size - gap * 2) / 3;
+  const accent = rule === 0 ? theme.regions[2]! : rule === 1 ? theme.regions[0]! : theme.regions[4]!;
+  const active = rule === 0 ? new Set([0, 1, 2, 3, 4, 6]) : new Set([0, 1, 2, 3, 4, 5, 6, 7, 8]);
+  const catCell = 4;
+  for (let index = 0; index < 9; index++) {
+    const row = Math.floor(index / 3);
+    const col = index % 3;
+    const rect = {
+      x: x + col * (cell + gap),
+      y: y + row * (cell + gap),
+      w: cell,
+      h: cell,
+    };
+    fillRound(ctx, rect, active.has(index) ? accent : theme.paperDeep, Math.max(1, cell * 0.16));
+    const shouldCross = rule === 0
+      ? active.has(index) && index !== catCell
+      : rule === 1
+        ? (row === 1 || col === 1) && index !== catCell
+        : index !== catCell;
+    if (shouldCross) {
+      const inset = cell * 0.24;
+      ctx.strokeStyle = "rgba(255,255,255,0.95)";
+      ctx.lineWidth = Math.max(0.8, cell * 0.12);
+      ctx.beginPath();
+      ctx.moveTo(rect.x + inset, rect.y + inset);
+      ctx.lineTo(rect.x + cell - inset, rect.y + cell - inset);
+      ctx.moveTo(rect.x + cell - inset, rect.y + inset);
+      ctx.lineTo(rect.x + inset, rect.y + cell - inset);
+      ctx.stroke();
+    }
+    if (index === catCell) {
+      const cx = rect.x + cell / 2;
+      const cy = rect.y + cell / 2;
+      drawMiniCat(ctx, cx, cy, cell * 1.45);
+    }
+  }
+}
 type Mode = "infinite" | "daily";
 
 interface PreparedPuzzle {
@@ -199,6 +312,7 @@ export function createApp(env: Env) {
   let confetti: ConfettiParticle[] = [];
   let celebrationSoundPlayed = false;
   let mistakeHelpStartedAt: number | null = null;
+  let persistTimer: ReturnType<typeof setTimeout> | null = null;
 
   const puzzleQueue = new PuzzleQueue<PreparedPuzzle>();
 
@@ -290,11 +404,26 @@ export function createApp(env: Env) {
         }
         recordBoardMotion(before, action.type === "place" ? action.index : null, mistakesBefore);
       }
-      if (changed) persist();
+      if (changed) {
+        if (action.type === "place") persistSoon();
+        else persist();
+      }
     },
   );
 
+  function persistSoon(): void {
+    if (persistTimer !== null) clearTimeout(persistTimer);
+    persistTimer = setTimeout(() => {
+      persistTimer = null;
+      persist();
+    }, 320);
+  }
+
   function persist(): void {
+    if (persistTimer !== null) {
+      clearTimeout(persistTimer);
+      persistTimer = null;
+    }
     shell.settings = settings;
     if (mode === "daily" && play) {
       const key = dailyRecordKey(play);
@@ -534,8 +663,7 @@ export function createApp(env: Env) {
       };
       infinite.history = [...infinite.history, rec].slice(-20);
     }
-    persist();
-    if (mode === "infinite") void prepareNextPuzzle();
+    persistSoon();
   }
 
   function finishLevelCompleteSequence(): void {
@@ -544,6 +672,7 @@ export function createApp(env: Env) {
     confetti = [];
     modal = "result";
     persist();
+    if (mode === "infinite") void prepareNextPuzzle();
   }
 
   function onWin(): void {
@@ -950,7 +1079,7 @@ export function createApp(env: Env) {
     const btnLabelGap = 16;
     const bottomBarH = btnD + btnLabelGap + 6;
     const gestureH = 20;
-    let rulesH = narrow ? 30 : 34;
+    let rulesH = narrow ? 52 : 56;
     let footerH = 18;
     const boardPad = 6;
     const frameExtra = boardPad * 2;
@@ -988,49 +1117,30 @@ export function createApp(env: Env) {
           cursorY + rulesH / 2,
         );
       } else {
-        const labels = ["一色一猫", "行列各一", "互不相邻"];
-        const gapR = 6;
-        const rw = (box.w - gapR * 2) / 3;
-        const ruleFont = narrow ? "8px sans-serif" : "9px sans-serif";
+        const labels = ["一种颜色一只猫", "同行同列各一只", "猫咪不能相邻"];
+        fillRound(ctx, { x: box.x, y: cursorY, w: box.w, h: rulesH }, theme.surface, 12);
+        const outerPad = Math.max(4, Math.min(7, rulesH * 0.14));
+        const gapR = 4;
+        const rw = (box.w - outerPad * 2 - gapR * 2) / 3;
+        const innerH = rulesH - outerPad * 2;
+        const iconSize = Math.min(innerH - 2, narrow ? 30 : 34);
+        const ruleFont = narrow ? "600 8px sans-serif" : "600 9px sans-serif";
         for (let i = 0; i < 3; i++) {
           const rect: Rect = {
-            x: box.x + i * (rw + gapR),
-            y: cursorY,
+            x: box.x + outerPad + i * (rw + gapR),
+            y: cursorY + outerPad,
             w: rw,
-            h: rulesH,
+            h: innerH,
           };
-          fillRound(ctx, rect, theme.surface, 12);
-          const iconX = rect.x + 14;
-          const iconY = rect.y + rect.h / 2;
-          ctx.strokeStyle = theme.accent;
-          ctx.lineWidth = 1.4;
-          ctx.strokeRect(iconX - 6, iconY - 6, 12, 12);
-          if (i === 0) {
-            ctx.fillStyle = theme.regions[2]!;
-            ctx.fillRect(iconX - 5, iconY - 5, 5, 10);
-            ctx.fillStyle = "#ffffff";
-            ctx.beginPath();
-            ctx.arc(iconX - 2.5, iconY, 1.8, 0, Math.PI * 2);
-            ctx.fill();
-          } else if (i === 1) {
-            ctx.fillStyle = theme.accent;
-            ctx.beginPath();
-            ctx.arc(iconX, iconY, 2, 0, Math.PI * 2);
-            ctx.fill();
-          } else {
-            ctx.strokeStyle = theme.wrong;
-            ctx.beginPath();
-            ctx.moveTo(iconX - 4, iconY - 4);
-            ctx.lineTo(iconX + 4, iconY + 4);
-            ctx.moveTo(iconX + 4, iconY - 4);
-            ctx.lineTo(iconX - 4, iconY + 4);
-            ctx.stroke();
-          }
+          fillRound(ctx, rect, theme.paper, 8);
+          const iconX = rect.x + 3;
+          const iconY = rect.y + (rect.h - iconSize) / 2;
+          drawRuleMiniGrid(ctx, iconX, iconY, iconSize, i);
           ctx.fillStyle = theme.ink;
-          ctx.font = `600 ${ruleFont}`;
+          ctx.font = ruleFont;
           ctx.textAlign = "left";
           ctx.textBaseline = "middle";
-          ctx.fillText(labels[i]!, rect.x + 25, rect.y + rect.h / 2);
+          ctx.fillText(labels[i]!, iconX + iconSize + 4, rect.y + rect.h / 2);
         }
       }
       cursorY += rulesH + 8;
@@ -1259,11 +1369,13 @@ export function createApp(env: Env) {
 
     const presentation = presentHint(play.level, hint, hintSession.mode);
     const frame = hintSession.frame(motionTime, settings.animationsEnabled, hint.targets.length);
-    const titleLines = wrapText(ctx, presentation.title, textW - 36, "800 18px sans-serif");
+    const titleFont = "800 18px sans-serif";
+    const reasonFont = "14px sans-serif";
+    const titleLines = wrapHintText(ctx, presentation.title, textW - 36, titleFont, 17);
     const currentStep = presentation.steps[frame.stage]!;
-    const reasonLines = wrapText(ctx, currentStep.description, textW, "14px sans-serif");
+    const reasonLines = wrapHintText(ctx, currentStep.description, textW, reasonFont, 14);
     const titleBlock = titleLines.length * 24;
-    const reasonBlock = Math.max(...presentation.steps.map(step => wrapText(ctx, step.description, textW, "14px sans-serif").length)) * 21;
+    const reasonBlock = Math.max(...presentation.steps.map(step => wrapHintText(ctx, step.description, textW, reasonFont, 14).length)) * 21;
     const rowUnit = hintSession.mode === "direct" ? undefined : hint.units?.find((u) => u < n);
     const previewBoard =
       previewHintBoard(play.level, play.board, hint, settings.autoMarkEnabled) ?? play.board;
@@ -1303,11 +1415,11 @@ export function createApp(env: Env) {
 
     let y = cardY + 20;
     ctx.fillStyle = theme.ink;
-    ctx.font = "800 18px sans-serif";
+    ctx.font = titleFont;
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     for (const line of titleLines) {
-      ctx.fillText(line, cardX + inner, y);
+      drawHintTextLine(ctx, line, cardX + inner, y, 17, theme.ink);
       y += 24;
     }
     const close = addHit("close", {
@@ -1330,10 +1442,10 @@ export function createApp(env: Env) {
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillStyle = theme.ink;
-    ctx.font = "14px sans-serif";
+    ctx.font = reasonFont;
     const reasonY = y;
     for (const line of reasonLines) {
-      ctx.fillText(line, cardX + inner, y);
+      drawHintTextLine(ctx, line, cardX + inner, y, 14, theme.ink);
       y += 21;
     }
 
